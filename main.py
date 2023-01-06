@@ -1,4 +1,6 @@
 import os
+from typing import Any, Callable, List, Optional, Type, Union
+from torch import Tensor
 
 import pandas as pd
 import seaborn as sn
@@ -23,6 +25,7 @@ PATH_DATASETS = os.environ.get("PATH_DATASETS", "data")
 BATCH_SIZE = 256 if torch.cuda.is_available() else 64
 NUM_WORKERS = int(os.cpu_count() / 2)
 NUM_CLASSES = 10
+K = 10
 
 train_transforms = torchvision.transforms.Compose(
     [
@@ -49,10 +52,12 @@ cifar10_dm = CIFAR10DataModule(
     val_transforms=test_transforms,
 )
 
+
 def create_model():
-    model = torchvision.models.resnet18(pretrained=False, num_classes=NUM_CLASSES)
-    model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-    model.maxpool = nn.Identity()
+    model = torchvision.models.resnet18(pretrained='IMAGENET1K_V1', num_classes=1000)
+    model.fc = nn.Identity()
+    # model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+    # model.maxpool = nn.Identity()
     return model
 
 class LitResnet(LightningModule):
@@ -61,11 +66,50 @@ class LitResnet(LightningModule):
 
         self.save_hyperparameters()
         self.model = create_model()
+        self.memory_list = self._init_memory_list()
+        self.memory_list.requires_grad = False
 
+    def _init_memory_list(self):
+        from torchvision import datasets, transforms
+
+        transform = transforms.Compose([
+                transforms.Resize((32, 32)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
+                    std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
+                )
+        ])
+        train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+        self.model.eval()
+        model = self.model.cuda()
+        memory_list = [None] * NUM_CLASSES
+        with torch.inference_mode():
+            for x, y in train_loader:
+                x = x.cuda()
+                out = self.model(x)
+                for out_i, y_i in zip(out, y):
+                    out_i = out_i.unsqueeze(0)
+                    if memory_list[y_i] is None:
+                        memory_list[y_i] = out_i
+                    else:
+                        memory_list[y_i] = torch.cat([memory_list[y_i], out_i], dim=0)
+
+        # num classes, num images, dim
+        memory_list = torch.stack(memory_list, dim=0)
+        return memory_list
 
     def forward(self, x):
         out = self.model(x)
-        return F.log_softmax(out, dim=1)
+        classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+        # B, C, N -> B, C, K
+        topk_sim, indices = classwise_sim.topk(k=K, dim=-1, largest=False, sorted=False)
+        # B, C, K -> B, C
+        topk_sim = topk_sim.mean(dim=-1)
+
+        return F.log_softmax(topk_sim, dim=1)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -123,7 +167,7 @@ class LitResnet(LightningModule):
 model = LitResnet(lr=0.05)
 
 trainer = Trainer(
-    max_epochs=30,
+    max_epochs=1000,
     accelerator="auto",
     devices=1 if torch.cuda.is_available() else None,  # limiting got iPython runs
     logger=CSVLogger(save_dir="logs/"),
