@@ -19,6 +19,8 @@ from torch.optim.lr_scheduler import OneCycleLR
 from torch.optim.swa_utils import AveragedModel, update_bn
 from torchmetrics.functional import accuracy
 
+from einops import rearrange
+
 seed_everything(7)
 
 PATH_DATASETS = os.environ.get("PATH_DATASETS", "data")
@@ -54,11 +56,12 @@ cifar10_dm = CIFAR10DataModule(
 
 
 def create_model():
-    model = torchvision.models.resnet18(pretrained='IMAGENET1K_V1', num_classes=1000)
+    model = torchvision.models.resnet18(pretrained=None, num_classes=1000)
     model.fc = nn.Identity()
-    # model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-    # model.maxpool = nn.Identity()
+    model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+    model.maxpool = nn.Identity()
     return model
+
 
 class LitResnet(LightningModule):
     def __init__(self, lr=0.05):
@@ -66,8 +69,13 @@ class LitResnet(LightningModule):
 
         self.save_hyperparameters()
         self.model = create_model()
-        self.memory_list = self._init_memory_list()
-        self.memory_list.requires_grad = False
+        # self.fc = nn.Linear(512, 10)
+        memory_list = self._init_memory_list()
+
+        self.memory_list = nn.Linear(*list(reversed(memory_list.shape)), bias=False)
+        with torch.no_grad():
+            self.memory_list.weight.copy_(memory_list)
+        # self.memory_list_oldw = memory_list.clone()
 
     def _init_memory_list(self):
         from torchvision import datasets, transforms
@@ -84,11 +92,10 @@ class LitResnet(LightningModule):
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         self.model.eval()
-        model = self.model.cuda()
         memory_list = [None] * NUM_CLASSES
         with torch.inference_mode():
             for x, y in train_loader:
-                x = x.cuda()
+                x = x.to(self.device)
                 out = self.model(x)
                 for out_i, y_i in zip(out, y):
                     out_i = out_i.unsqueeze(0)
@@ -98,14 +105,29 @@ class LitResnet(LightningModule):
                         memory_list[y_i] = torch.cat([memory_list[y_i], out_i], dim=0)
 
         # num classes, num images, dim
-        memory_list = torch.stack(memory_list, dim=0)
+        # memory_list = torch.stack(memory_list, dim=0)
+
+        # num classes * num_images, dim
+        memory_list = torch.cat(memory_list, dim=0)
+        memory_list = memory_list.detach()
+        memory_list.requires_grad = False
         return memory_list
 
     def forward(self, x):
         out = self.model(x)
-        classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+        out = self.fc(out)
+        return F.log_softmax(out, dim=1)
+
+    def Xforward(self, x):
+        out = self.model(x)
+        # classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+
+        classwise_sim = self.memory_list(out)
+        classwise_sim = rearrange(classwise_sim, 'b (c n) -> b c n', c=NUM_CLASSES)
+
         # B, C, N -> B, C, K
-        topk_sim, indices = classwise_sim.topk(k=K, dim=-1, largest=False, sorted=False)
+        topk_sim, indices = classwise_sim.topk(k=K, dim=-1, largest=True, sorted=False)
+
         # B, C, K -> B, C
         topk_sim = topk_sim.mean(dim=-1)
 
@@ -117,6 +139,18 @@ class LitResnet(LightningModule):
         loss = F.nll_loss(logits, y)
         self.log("train_loss", loss)
         return loss
+
+    def training_epoch_end(self, outputs):
+        # print((self.memory_list_oldw == self.memory_list.weight).sum())
+        # self.memory_list_oldw.copy_(self.memory_list.weight)
+
+        '''
+        with torch.no_grad():
+            e = 0.1
+            new_memory_list = self._init_memory_list()
+            old_memory_list = self.memory_list.weight
+            self.memory_list.weight.copy_((1 - e) * old_memory_list + e * new_memory_list)
+        '''
 
     def evaluate(self, batch, stage=None):
         x, y = batch
@@ -148,6 +182,8 @@ class LitResnet(LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(
             self.parameters(),
+            # self.memory_list.parameters(),
+            # self.fc.parameters(),
             lr=self.hparams.lr,
             momentum=0.9,
             weight_decay=5e-4,
