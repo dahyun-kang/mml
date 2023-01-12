@@ -27,7 +27,7 @@ class LitResnet(LightningModule):
         self.args = self.hparams.args
         self.num_classes = dm.num_classes
         self.model = self._init_model()
-        # self.fc = nn.Linear(512, NUM_CLASSES)
+        # self.fc = nn.Linear(512, self.num_classes)
         memory_list = self._init_memory_list()
 
         self.memory_list = nn.Linear(*list(reversed(memory_list.shape)), bias=False)
@@ -42,7 +42,7 @@ class LitResnet(LightningModule):
         return model
 
     def _init_memory_list(self):
-        train_loader = self.hparams.dm.train_dataloader()
+        train_loader = self.hparams.dm.unshuffled_train_dataloader()
 
         model = self.model.cuda()
         model.eval()
@@ -77,7 +77,7 @@ class LitResnet(LightningModule):
         # classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
 
         classwise_sim = self.memory_list(out)
-        classwise_sim = rearrange(classwise_sim, 'b (c n) -> b c n', c=100)  # TODO: remove hardcoded numclasses
+        classwise_sim = rearrange(classwise_sim, 'b (c n) -> b c n', c=self.num_classes)
 
         # B, C, N -> B, C, K
         topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     parser.add_argument('--bsz', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=0.05, help='Learning rate')
     parser.add_argument('--k', type=int, default=10, help='K KNN')
-    parser.add_argument('--maxepochs', type=int, default=2000, help='Max iterations')
+    parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     args = parser.parse_args()
 
