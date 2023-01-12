@@ -8,15 +8,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+from torch.utils.data import DataLoader
 from IPython.core.display import display
 from pl_bolts.datamodules import CIFAR10DataModule
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
 from pytorch_lightning import LightningModule, Trainer, seed_everything
+from pytorch_lightning.core.datamodule import LightningDataModule
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.progress import TQDMProgressBar
-from pytorch_lightning.loggers import CSVLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from torch.optim.lr_scheduler import OneCycleLR
-from torch.optim.swa_utils import AveragedModel, update_bn
 from torchmetrics.functional import accuracy
 
 from einops import rearrange
@@ -26,8 +27,10 @@ seed_everything(7)
 PATH_DATASETS = os.environ.get("PATH_DATASETS", "data")
 BATCH_SIZE = 256 if torch.cuda.is_available() else 64
 NUM_WORKERS = int(os.cpu_count() / 2)
-NUM_CLASSES = 10
+NUM_CLASSES = 100
 K = 10
+
+dataset = 'cifar100'
 
 train_transforms = torchvision.transforms.Compose(
     [
@@ -55,6 +58,37 @@ cifar10_dm = CIFAR10DataModule(
 )
 
 
+class CIFAR100DataModule(LightningDataModule):
+    def __init__(self, data_dir='data', batch_size=256, num_workers=0, train_transforms=None, val_transforms=None):
+        super().__init__()
+        self.save_hyperparameters()
+
+    def setup(self, stage: str):
+        self.dataset_train = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=True, transform=self.hparams.train_transforms, download=True)
+        self.dataset_val = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=False, transform=self.hparams.val_transforms, download=True)
+
+    def train_dataloader(self):
+        return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
+
+    def val_dataloader(self):
+        return DataLoader(self.dataset_val, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
+
+    def test_dataloader(self):
+        return self.val_dataloader()
+
+    def predict_dataloader(self):
+        return self.val_dataloader()
+
+
+cifar100_dm = CIFAR100DataModule(
+    data_dir=PATH_DATASETS,
+    batch_size=BATCH_SIZE,
+    num_workers=NUM_WORKERS,
+    train_transforms=train_transforms,
+    val_transforms=test_transforms,
+)
+
+
 def create_model():
     model = torchvision.models.resnet18(pretrained=None, num_classes=1000)
     model.fc = nn.Identity()
@@ -69,13 +103,12 @@ class LitResnet(LightningModule):
 
         self.save_hyperparameters()
         self.model = create_model()
-        # self.fc = nn.Linear(512, 10)
+        # self.fc = nn.Linear(512, NUM_CLASSES)
         memory_list = self._init_memory_list()
 
         self.memory_list = nn.Linear(*list(reversed(memory_list.shape)), bias=False)
         with torch.no_grad():
             self.memory_list.weight.copy_(memory_list)
-        # self.memory_list_oldw = memory_list.clone()
 
     def _init_memory_list(self):
         from torchvision import datasets, transforms
@@ -88,15 +121,16 @@ class LitResnet(LightningModule):
                     std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
                 )
         ])
-        train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+        train_dataset = datasets.CIFAR100(root='./data', train=True, download=True, transform=transform)
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-        self.model.eval()
+        model = self.model.cuda()
+        model.eval()
         memory_list = [None] * NUM_CLASSES
         with torch.inference_mode():
             for x, y in train_loader:
-                x = x.to(self.device)
-                out = self.model(x)
+                x = x.cuda()
+                out = model(x)
                 for out_i, y_i in zip(out, y):
                     out_i = out_i.unsqueeze(0)
                     if memory_list[y_i] is None:
@@ -113,12 +147,12 @@ class LitResnet(LightningModule):
         memory_list.requires_grad = False
         return memory_list
 
-    def forward(self, x):
+    def Xforward(self, x):
         out = self.model(x)
         out = self.fc(out)
         return F.log_softmax(out, dim=1)
 
-    def Xforward(self, x):
+    def forward(self, x):
         out = self.model(x)
         # classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
 
@@ -206,9 +240,9 @@ trainer = Trainer(
     max_epochs=1000,
     accelerator="auto",
     devices=1 if torch.cuda.is_available() else None,  # limiting got iPython runs
-    logger=CSVLogger(save_dir="logs/"),
+    logger=WandbLogger(name='mem-direct-ema.1', save_dir='logs', project=f'qbmr-{dataset}'),
     callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
 )
 
-trainer.fit(model, cifar10_dm)
-trainer.test(model, datamodule=cifar10_dm)
+trainer.fit(model, cifar100_dm)
+trainer.test(model, datamodule=cifar100_dm)
