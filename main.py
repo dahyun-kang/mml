@@ -3,70 +3,29 @@ import argparse
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import OneCycleLR
 import torch.nn.functional as F
 
 import torchvision
 
 from pytorch_lightning import LightningModule, Trainer, seed_everything
-from pytorch_lightning.core.datamodule import LightningDataModule
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.progress import TQDMProgressBar
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
-from pl_bolts.datamodules import CIFAR10DataModule
-from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
-
 from torchmetrics.functional import accuracy
 
 from einops import rearrange
-
-
-class CIFAR100DataModule(LightningDataModule):
-    def __init__(self, data_dir='data', batch_size=256, num_workers=0):
-        super().__init__()
-        self.save_hyperparameters()
-
-    def setup(self, stage: str):
-        train_transforms = torchvision.transforms.Compose(
-            [
-                torchvision.transforms.RandomCrop(32, padding=4),
-                torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.ToTensor(),
-                cifar10_normalization(),
-            ]
-        )
-
-        val_transforms = torchvision.transforms.Compose(
-            [
-                torchvision.transforms.ToTensor(),
-                cifar10_normalization(),
-            ]
-        )
-
-        self.dataset_train = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=True, transform=train_transforms, download=True)
-        self.dataset_val = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=False, transform=val_transforms, download=True)
-
-    def train_dataloader(self):
-        return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
-
-    def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
-
-    def test_dataloader(self):
-        return self.val_dataloader()
-
-    def predict_dataloader(self):
-        return self.val_dataloader()
+from datamodule import return_datamodule
 
 
 class LitResnet(LightningModule):
-    def __init__(self, args):
+    def __init__(self, args, dm):
         super().__init__()
 
         self.save_hyperparameters()
         self.args = self.hparams.args
+        self.num_classes = dm.num_classes
         self.model = self._init_model()
         # self.fc = nn.Linear(512, NUM_CLASSES)
         memory_list = self._init_memory_list()
@@ -83,22 +42,11 @@ class LitResnet(LightningModule):
         return model
 
     def _init_memory_list(self):
-        from torchvision import datasets, transforms
-
-        transform = transforms.Compose([
-                transforms.Resize((32, 32)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
-                    std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
-                )
-        ])
-        train_dataset = datasets.CIFAR100(root=self.args.datapath, train=True, download=True, transform=transform)
-        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=self.args.bsz, shuffle=False)
+        train_loader = self.hparams.dm.train_dataloader()
 
         model = self.model.cuda()
         model.eval()
-        memory_list = [None] * len(train_dataset.classes)
+        memory_list = [None] * self.num_classes
         with torch.inference_mode():
             for x, y in train_loader:
                 x = x.cuda()
@@ -218,31 +166,11 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.05, help='Learning rate')
     parser.add_argument('--k', type=int, default=10, help='K KNN')
     parser.add_argument('--maxepochs', type=int, default=2000, help='Max iterations')
-
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     args = parser.parse_args()
 
-    PATH_DATASETS = os.environ.get("PATH_DATASETS", "data")
-
-    dataset = 'cifar100'
-
-
-    cifar10_dm = CIFAR10DataModule(
-        data_dir=args.datapath,
-        batch_size=args.bsz,
-        num_workers=8,
-        # train_transforms=train_transforms,
-        # test_transforms=test_transforms,
-        # val_transforms=test_transforms,
-    )
-
-    cifar100_dm = CIFAR100DataModule(
-        data_dir=args.datapath,
-        batch_size=args.bsz,
-        num_workers=8,
-    )
-
-    model = LitResnet(args)
+    dm = return_datamodule(args.datapath, args.dataset, args.bsz)
+    model = LitResnet(args, dm=dm)
 
     trainer = Trainer(
         max_epochs=args.maxepochs,
@@ -252,5 +180,5 @@ if __name__ == '__main__':
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
     )
 
-    trainer.fit(model, cifar100_dm)
-    trainer.test(model, datamodule=cifar100_dm)
+    trainer.fit(model, dm)
+    trainer.test(model, datamodule=dm)
