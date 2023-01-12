@@ -22,41 +22,6 @@ from torchmetrics.functional import accuracy
 
 from einops import rearrange
 
-seed_everything(7)
-
-PATH_DATASETS = os.environ.get("PATH_DATASETS", "data")
-BATCH_SIZE = 256 if torch.cuda.is_available() else 64
-NUM_WORKERS = int(os.cpu_count() / 2)
-NUM_CLASSES = 100
-K = 10
-
-dataset = 'cifar100'
-
-train_transforms = torchvision.transforms.Compose(
-    [
-        torchvision.transforms.RandomCrop(32, padding=4),
-        torchvision.transforms.RandomHorizontalFlip(),
-        torchvision.transforms.ToTensor(),
-        cifar10_normalization(),
-    ]
-)
-
-test_transforms = torchvision.transforms.Compose(
-    [
-        torchvision.transforms.ToTensor(),
-        cifar10_normalization(),
-    ]
-)
-
-cifar10_dm = CIFAR10DataModule(
-    data_dir=PATH_DATASETS,
-    batch_size=BATCH_SIZE,
-    num_workers=NUM_WORKERS,
-    train_transforms=train_transforms,
-    test_transforms=test_transforms,
-    val_transforms=test_transforms,
-)
-
 
 class CIFAR100DataModule(LightningDataModule):
     def __init__(self, data_dir='data', batch_size=256, num_workers=0, train_transforms=None, val_transforms=None):
@@ -80,35 +45,26 @@ class CIFAR100DataModule(LightningDataModule):
         return self.val_dataloader()
 
 
-cifar100_dm = CIFAR100DataModule(
-    data_dir=PATH_DATASETS,
-    batch_size=BATCH_SIZE,
-    num_workers=NUM_WORKERS,
-    train_transforms=train_transforms,
-    val_transforms=test_transforms,
-)
-
-
-def create_model():
-    model = torchvision.models.resnet18(pretrained=None, num_classes=1000)
-    model.fc = nn.Identity()
-    model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-    model.maxpool = nn.Identity()
-    return model
-
 
 class LitResnet(LightningModule):
     def __init__(self, lr=0.05):
         super().__init__()
 
         self.save_hyperparameters()
-        self.model = create_model()
+        self.model = self._init_model()
         # self.fc = nn.Linear(512, NUM_CLASSES)
         memory_list = self._init_memory_list()
 
         self.memory_list = nn.Linear(*list(reversed(memory_list.shape)), bias=False)
         with torch.no_grad():
             self.memory_list.weight.copy_(memory_list)
+
+    def _init_model(self):
+        model = torchvision.models.resnet18(pretrained=None, num_classes=1000)
+        model.fc = nn.Identity()
+        model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        model.maxpool = nn.Identity()
+        return model
 
     def _init_memory_list(self):
         from torchvision import datasets, transforms
@@ -234,15 +190,60 @@ class LitResnet(LightningModule):
         }
         return {"optimizer": optimizer, "lr_scheduler": scheduler_dict}
 
-model = LitResnet(lr=0.05)
 
-trainer = Trainer(
-    max_epochs=1000,
-    accelerator="auto",
-    devices=1 if torch.cuda.is_available() else None,  # limiting got iPython runs
-    logger=WandbLogger(name='mem-direct-ema.1', save_dir='logs', project=f'qbmr-{dataset}'),
-    callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
-)
+if __name__ == '__main__':
+    seed_everything(7)
 
-trainer.fit(model, cifar100_dm)
-trainer.test(model, datamodule=cifar100_dm)
+    PATH_DATASETS = os.environ.get("PATH_DATASETS", "data")
+    BATCH_SIZE = 256 if torch.cuda.is_available() else 64
+    NUM_WORKERS = int(os.cpu_count() / 2)
+    NUM_CLASSES = 100
+    K = 10
+
+    dataset = 'cifar100'
+
+    train_transforms = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.RandomCrop(32, padding=4),
+            torchvision.transforms.RandomHorizontalFlip(),
+            torchvision.transforms.ToTensor(),
+            cifar10_normalization(),
+        ]
+    )
+
+    test_transforms = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            cifar10_normalization(),
+        ]
+    )
+
+    cifar10_dm = CIFAR10DataModule(
+        data_dir=PATH_DATASETS,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        train_transforms=train_transforms,
+        test_transforms=test_transforms,
+        val_transforms=test_transforms,
+    )
+
+    cifar100_dm = CIFAR100DataModule(
+        data_dir=PATH_DATASETS,
+        batch_size=BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        train_transforms=train_transforms,
+        val_transforms=test_transforms,
+    )
+
+    model = LitResnet(lr=0.05)
+
+    trainer = Trainer(
+        max_epochs=1000,
+        accelerator="auto",
+        devices=1 if torch.cuda.is_available() else None,  # limiting got iPython runs
+        logger=WandbLogger(name='test', save_dir='logs', project=f'qbmr-{dataset}'),
+        callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
+    )
+
+    trainer.fit(model, cifar100_dm)
+    trainer.test(model, datamodule=cifar100_dm)
