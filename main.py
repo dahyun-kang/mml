@@ -1,37 +1,52 @@
-import os
+""" Query-Adaptive Memory Referencing Classification """
 import argparse
-from typing import Any, Callable, List, Optional, Type, Union
-from torch import Tensor
 
-import pandas as pd
-import seaborn as sn
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torchvision
+from torch import nn
 from torch.utils.data import DataLoader
-from IPython.core.display import display
-from pl_bolts.datamodules import CIFAR10DataModule
-from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
+from torch.optim.lr_scheduler import OneCycleLR
+import torch.nn.functional as F
+
+import torchvision
+
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.core.datamodule import LightningDataModule
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks.progress import TQDMProgressBar
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
-from torch.optim.lr_scheduler import OneCycleLR
+
+from pl_bolts.datamodules import CIFAR10DataModule
+from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
+
 from torchmetrics.functional import accuracy
 
 from einops import rearrange
 
 
 class CIFAR100DataModule(LightningDataModule):
-    def __init__(self, data_dir='data', batch_size=256, num_workers=0, train_transforms=None, val_transforms=None):
+    def __init__(self, data_dir='data', batch_size=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
 
     def setup(self, stage: str):
-        self.dataset_train = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=True, transform=self.hparams.train_transforms, download=True)
-        self.dataset_val = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=False, transform=self.hparams.val_transforms, download=True)
+        train_transforms = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.RandomCrop(32, padding=4),
+                torchvision.transforms.RandomHorizontalFlip(),
+                torchvision.transforms.ToTensor(),
+                cifar10_normalization(),
+            ]
+        )
+
+        val_transforms = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.ToTensor(),
+                cifar10_normalization(),
+            ]
+        )
+
+        self.dataset_train = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=True, transform=train_transforms, download=True)
+        self.dataset_val = torchvision.datasets.CIFAR100(root=self.hparams.data_dir, train=False, transform=val_transforms, download=True)
 
     def train_dataloader(self):
         return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
@@ -44,7 +59,6 @@ class CIFAR100DataModule(LightningDataModule):
 
     def predict_dataloader(self):
         return self.val_dataloader()
-
 
 
 class LitResnet(LightningModule):
@@ -212,37 +226,20 @@ if __name__ == '__main__':
 
     dataset = 'cifar100'
 
-    train_transforms = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.RandomCrop(32, padding=4),
-            torchvision.transforms.RandomHorizontalFlip(),
-            torchvision.transforms.ToTensor(),
-            cifar10_normalization(),
-        ]
-    )
-
-    test_transforms = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.ToTensor(),
-            cifar10_normalization(),
-        ]
-    )
 
     cifar10_dm = CIFAR10DataModule(
         data_dir=args.datapath,
         batch_size=args.bsz,
         num_workers=8,
-        train_transforms=train_transforms,
-        test_transforms=test_transforms,
-        val_transforms=test_transforms,
+        # train_transforms=train_transforms,
+        # test_transforms=test_transforms,
+        # val_transforms=test_transforms,
     )
 
     cifar100_dm = CIFAR100DataModule(
         data_dir=args.datapath,
         batch_size=args.bsz,
         num_workers=8,
-        train_transforms=train_transforms,
-        val_transforms=test_transforms,
     )
 
     model = LitResnet(args)
