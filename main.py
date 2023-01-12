@@ -1,4 +1,5 @@
 import os
+import argparse
 from typing import Any, Callable, List, Optional, Type, Union
 from torch import Tensor
 
@@ -47,10 +48,11 @@ class CIFAR100DataModule(LightningDataModule):
 
 
 class LitResnet(LightningModule):
-    def __init__(self, lr=0.05):
+    def __init__(self, args):
         super().__init__()
 
         self.save_hyperparameters()
+        self.args = self.hparams.args
         self.model = self._init_model()
         # self.fc = nn.Linear(512, NUM_CLASSES)
         memory_list = self._init_memory_list()
@@ -60,7 +62,7 @@ class LitResnet(LightningModule):
             self.memory_list.weight.copy_(memory_list)
 
     def _init_model(self):
-        model = torchvision.models.resnet18(pretrained=None, num_classes=1000)
+        model = torchvision.models.resnet18(weights=None, num_classes=1000)
         model.fc = nn.Identity()
         model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
         model.maxpool = nn.Identity()
@@ -77,12 +79,12 @@ class LitResnet(LightningModule):
                     std=[x / 255.0 for x in [63.0, 62.1, 66.7]]
                 )
         ])
-        train_dataset = datasets.CIFAR100(root='./data', train=True, download=True, transform=transform)
-        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=False)
+        train_dataset = datasets.CIFAR100(root=self.args.datapath, train=True, download=True, transform=transform)
+        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=self.args.bsz, shuffle=False)
 
         model = self.model.cuda()
         model.eval()
-        memory_list = [None] * NUM_CLASSES
+        memory_list = [None] * len(train_dataset.classes)
         with torch.inference_mode():
             for x, y in train_loader:
                 x = x.cuda()
@@ -113,10 +115,10 @@ class LitResnet(LightningModule):
         # classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
 
         classwise_sim = self.memory_list(out)
-        classwise_sim = rearrange(classwise_sim, 'b (c n) -> b c n', c=NUM_CLASSES)
+        classwise_sim = rearrange(classwise_sim, 'b (c n) -> b c n', c=100)  # TODO: remove hardcoded numclasses
 
         # B, C, N -> B, C, K
-        topk_sim, indices = classwise_sim.topk(k=K, dim=-1, largest=True, sorted=False)
+        topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
 
         # B, C, K -> B, C
         topk_sim = topk_sim.mean(dim=-1)
@@ -174,11 +176,11 @@ class LitResnet(LightningModule):
             self.parameters(),
             # self.memory_list.parameters(),
             # self.fc.parameters(),
-            lr=self.hparams.lr,
+            lr=self.args.lr,
             momentum=0.9,
             weight_decay=5e-4,
         )
-        steps_per_epoch = 45000 // BATCH_SIZE
+        steps_per_epoch = 45000 // self.args.bsz
         scheduler_dict = {
             "scheduler": OneCycleLR(
                 optimizer,
@@ -194,11 +196,19 @@ class LitResnet(LightningModule):
 if __name__ == '__main__':
     seed_everything(7)
 
+    parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
+    parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset path containing the root dir of pascal & coco')
+    parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar10', 'cifar100'], help='Experiment dataset')
+    parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
+    parser.add_argument('--bsz', type=int, default=256, help='Batch size')
+    parser.add_argument('--lr', type=float, default=0.05, help='Learning rate')
+    parser.add_argument('--k', type=int, default=10, help='K KNN')
+    parser.add_argument('--maxepochs', type=int, default=2000, help='Max iterations')
+
+    parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
+    args = parser.parse_args()
+
     PATH_DATASETS = os.environ.get("PATH_DATASETS", "data")
-    BATCH_SIZE = 256 if torch.cuda.is_available() else 64
-    NUM_WORKERS = int(os.cpu_count() / 2)
-    NUM_CLASSES = 100
-    K = 10
 
     dataset = 'cifar100'
 
@@ -219,29 +229,29 @@ if __name__ == '__main__':
     )
 
     cifar10_dm = CIFAR10DataModule(
-        data_dir=PATH_DATASETS,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
+        data_dir=args.datapath,
+        batch_size=args.bsz,
+        num_workers=8,
         train_transforms=train_transforms,
         test_transforms=test_transforms,
         val_transforms=test_transforms,
     )
 
     cifar100_dm = CIFAR100DataModule(
-        data_dir=PATH_DATASETS,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
+        data_dir=args.datapath,
+        batch_size=args.bsz,
+        num_workers=8,
         train_transforms=train_transforms,
         val_transforms=test_transforms,
     )
 
-    model = LitResnet(lr=0.05)
+    model = LitResnet(args)
 
     trainer = Trainer(
-        max_epochs=1000,
+        max_epochs=args.maxepochs,
         accelerator="auto",
         devices=1 if torch.cuda.is_available() else None,  # limiting got iPython runs
-        logger=WandbLogger(name='test', save_dir='logs', project=f'qbmr-{dataset}'),
+        logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qbmr-{args.dataset}'),
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
     )
 
