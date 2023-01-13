@@ -4,11 +4,29 @@ from pytorch_lightning.core.datamodule import LightningDataModule
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
 
 
+class IndexedCIFAR10(torchvision.datasets.CIFAR10):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __getitem__(self, index):
+        sample, target = super().__getitem__(index)
+        return index, sample, target
+
+
+class IndexedCIFAR100(torchvision.datasets.CIFAR100):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __getitem__(self, index):
+        sample, target = super().__getitem__(index)
+        return index, sample, target
+
+
 class CIFAR10DataModule(LightningDataModule):
     def __init__(self, data_dir='data', batch_size=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
-        self.dataset = torchvision.datasets.CIFAR10
+        self.dataset = IndexedCIFAR10
         self.dataset_train = self.dataset_val = None
 
     def setup(self, stage: str):
@@ -57,7 +75,7 @@ class CIFAR100DataModule(CIFAR10DataModule):
     def __init__(self, data_dir='data', batch_size=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
-        self.dataset = torchvision.datasets.CIFAR100
+        self.dataset = IndexedCIFAR100
 
     @property
     def num_classes(self) -> int:
