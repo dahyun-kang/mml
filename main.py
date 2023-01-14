@@ -46,11 +46,17 @@ class LitResnet(LightningModule):
     def _init_memory_list(self):
         train_loader = self.hparams.dm.unshuffled_train_dataloader()
 
+        if self.args.dataset == 'cifar10':
+            num_samples = 5000
+        elif self.args.dataset == 'cifar100':
+            num_samples = 500
+        else:
+            raise NotImplementedError
+
         model = self.model.cuda()
         model.eval()
         memory_list = [None] * self.num_classes
-        assert self.args.dataset in ['cifar10', 'cifar100']
-        memid_list = [None] * (self.num_classes * 5000)  # num samples
+        memid_list = [None] * (self.num_classes * num_samples)  # num samples
         count = 0
         with torch.inference_mode():
             for dataid, x, y in train_loader:
