@@ -146,7 +146,7 @@ class LitResnet(LightningModule):
         logits = self(x)
         loss = F.nll_loss(logits, y)
         preds = torch.argmax(logits, dim=1)
-        acc = accuracy(preds, y)
+        acc = accuracy(preds, y) * 100.
 
         if stage:
             self.log(f"{stage}_loss", loss, prog_bar=True)
@@ -162,7 +162,7 @@ class LitResnet(LightningModule):
         epoch_loss = torch.stack(batch_losses).mean()
         batch_accs =  [x["val_acc"] for x in outputs]
         epoch_acc = torch.stack(batch_accs).mean()
-        print(f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc * 100.:.2f}\n')
+        print(f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}\n')
         # return {'val_loss': epoch_loss, 'val_acc': epoch_acc}
 
     def test_step(self, batch, batch_idx):
