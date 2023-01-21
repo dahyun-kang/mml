@@ -241,6 +241,7 @@ class LitResnet(LightningModule):
             momentum=0.9,
             weight_decay=5e-4,
         )
+        '''
         steps_per_epoch = 45000 // self.args.bsz
         scheduler_dict = {
             "scheduler": OneCycleLR(
@@ -251,7 +252,9 @@ class LitResnet(LightningModule):
             ),
             "interval": "step",
         }
-        return {"optimizer": optimizer, "lr_scheduler": scheduler_dict}
+        '''
+
+        return {"optimizer": optimizer}
 
 
 if __name__ == '__main__':
