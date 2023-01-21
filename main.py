@@ -1,5 +1,6 @@
 """ Query-Adaptive Memory Referencing Classification """
 import argparse
+from tqdm import tqdm
 
 import torch
 from torch import nn
@@ -28,7 +29,8 @@ class LitResnet(LightningModule):
         self.num_classes = dm.num_classes
         self.model = self._init_model()
         # self.fc = nn.Linear(512, self.num_classes)
-        self.memory_list, self.memid_list = self._init_memory_list()
+        # self.memory_list, self.memid_list = self._init_memory_list()
+        self.memory_list = self.memid_list = None
 
         '''
         self.memory_list = nn.Linear(*list(reversed(memory_list.shape)), bias=False)
@@ -39,9 +41,17 @@ class LitResnet(LightningModule):
     def _init_model(self):
         model = torchvision.models.resnet18(weights=None, num_classes=1000)
         model.fc = nn.Identity()
-        model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-        model.maxpool = nn.Identity()
+
+        # Retain img size at the shallowest layer
+        if 'cifar' in self.args.dataset:
+            model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+            model.maxpool = nn.Identity()
         return model
+
+    '''
+    def on_fit_start(self):
+        self.memory_list, self.memid_list = self._init_memory_list()
+    '''
 
     def _init_memory_list(self):
         train_loader = self.hparams.dm.unshuffled_train_dataloader()
@@ -50,19 +60,43 @@ class LitResnet(LightningModule):
             num_samples = 5000
         elif self.args.dataset == 'cifar100':
             num_samples = 500
+        elif self.args.dataset == 'places365':
+            max_num_samples = 5000
+            # num_samples = 3000
+            num_samples = 1000
+        elif self.args.dataset == 'caltech101':
+            max_num_samples = 800
+            # num_samples = 3000
+            num_samples = 40
+        elif self.args.dataset == 'country211':
+            max_num_samples = 800
+            num_samples = 40
+        elif self.args.dataset == 'fgvcaircraft':
+            max_num_samples = 100
+            num_samples = 100
+        elif self.args.dataset == 'food101':
+            max_num_samples = 750
+            num_samples = 750
         else:
             raise NotImplementedError
 
         model = self.model.cuda()
         model.eval()
         memory_list = [None] * self.num_classes
-        memid_list = [None] * (self.num_classes * num_samples)  # num samples
+        # set dataid = -1 (dataid -> memid) to denote ignored ones
+        memid_list = [-1] * (self.num_classes * max_num_samples)
+        class_count = [0] * self.num_classes
         count = 0
+
         with torch.inference_mode():
-            for dataid, x, y in train_loader:
+            for dataid, x, y in tqdm(train_loader):
                 x = x.cuda()
                 out = model(x)
                 for data_i, out_i, y_i in zip(dataid, out, y):
+                    if class_count[y_i] >= num_samples:
+                        continue
+                    class_count[y_i] += 1
+
                     # dataid <- iteration id
                     memid_list[data_i] = count
                     count += 1
@@ -99,16 +133,30 @@ class LitResnet(LightningModule):
 
     def forward(self, x):
         out = self.model(x)
-        classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
 
         '''
+        classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+
         classwise_sim = self.memory_list(out)
         classwise_sim = rearrange(classwise_sim, 'b (c n) -> b c n', c=self.num_classes)
-        '''
 
         # B, C, N -> B, C, K
         topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
+        '''
 
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+
+            # B, C, N -> B, C, K
+            topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
+
+            # 1, C, 1
+            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
+
+            # C, N, D [[1, C, 1], [B, C, K]] -> B, C, K, D
+            knnemb = self.memory_list[class_idx, indices]
+
+        topk_sim = torch.einsum('b d, b c k d -> b c k', out, knnemb)
         # B, C, K -> B, C
         topk_sim = topk_sim.mean(dim=-1)
 
@@ -124,28 +172,38 @@ class LitResnet(LightningModule):
     # def training_step_end(self, batch_parts): # ???????? 이걸로 하니 in-place anormality 탐지되더니 밑에걸로 하니까 사라짐
     # training_step_end는 optim step 도중이고
     # train_batch_end는 step 계산 끝난 이후인듯
-    def train_batch_end(self, outputs, batch, batch_idx):
+    '''
+    def on_train_batch_end(self, outputs, batch, batch_idx):
 
         # track data id and replace the old embedding with the new one
         with torch.no_grad():
             id, x, _ = batch
-            out = self.model(x)
-            newmem = rearrange(self.memory_list, 'c n d -> (c n) d')
+            emb = self.model(x)
             mem_id = torch.gather(input=self.memid_list, dim=0, index=id)
-            newmem.scatter_(dim=0, index=mem_id.unsqueeze(1), src=out)
-            self.memory_list = rearrange(newmem, '(c n) d -> c n d', c=self.num_classes).clone()
 
+            if torch.all(mem_id == -1):
+                return
+
+            valid_mem_id = mem_id[mem_id != -1]
+            valid_emb = emb[mem_id != -1]
+
+            newmem = rearrange(self.memory_list, 'c n d -> (c n) d')
+            newmem.scatter_(dim=0, index=valid_mem_id.unsqueeze(1), src=valid_emb)
+            self.memory_list = rearrange(newmem, '(c n) d -> c n d', c=self.num_classes).clone()
+    '''
+
+    '''
+    # 이걸 쓰면 왠진 몰라도 memory leak 이 생김 빡침
     def training_epoch_end(self, outputs):
         # print((self.memory_list_oldw == self.memory_list.weight).sum())
         # self.memory_list_oldw.copy_(self.memory_list.weight)
 
-        '''
         with torch.no_grad():
             e = 0.1
             new_memory_list = self._init_memory_list()
             old_memory_list = self.memory_list.weight
             self.memory_list.weight.copy_((1 - e) * old_memory_list + e * new_memory_list)
-        '''
+    '''
 
     def evaluate(self, batch, stage=None):
         id, x, y = batch
@@ -201,7 +259,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset path containing the root dir of pascal & coco')
-    parser.add_argument('--dataset', type=str, default='cifar100', choices=['cifar10', 'cifar100'], help='Experiment dataset')
+    parser.add_argument('--dataset', type=str, default='cifar100', help='Experiment dataset')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--bsz', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=0.05, help='Learning rate')
