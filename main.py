@@ -300,6 +300,7 @@ if __name__ == '__main__':
         devices=1 if torch.cuda.is_available() else None,  # limiting got iPython runs
         logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qbmr-{args.dataset}'),
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
+        num_sanity_val_steps=0,
     )
 
     trainer.fit(model, dm)
