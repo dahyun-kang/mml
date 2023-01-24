@@ -4,40 +4,11 @@ from pytorch_lightning.core.datamodule import LightningDataModule
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, imagenet_normalization
 
 
-# memory elem을 pre-trained emb으로 쓴다면
-# 인덱스가 필요 없어진 거 같아
-class IndexedCIFAR10(torchvision.datasets.CIFAR10):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def __getitem__(self, index):
-        sample, target = super().__getitem__(index)
-        return index, sample, target
-
-
-class IndexedCIFAR100(torchvision.datasets.CIFAR100):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def __getitem__(self, index):
-        sample, target = super().__getitem__(index)
-        return index, sample, target
-
-
-class IndexedFood101(torchvision.datasets.Food101):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def __getitem__(self, index):
-        sample, target = super().__getitem__(index)
-        return index, sample, target
-
-
 class CIFAR10DataModule(LightningDataModule):
     def __init__(self, data_dir='data', batch_size=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
-        self.dataset = IndexedCIFAR10
+        self.dataset = torchvision.datasets.CIFAR10
         self.dataset_train = self.dataset_val = None
 
     def setup(self, stage: str):
@@ -86,7 +57,7 @@ class CIFAR100DataModule(CIFAR10DataModule):
     def __init__(self, data_dir='data', batch_size=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
-        self.dataset = IndexedCIFAR100
+        self.dataset = torchvision.datasets.CIFAR100
 
     @property
     def num_classes(self) -> int:
@@ -97,7 +68,7 @@ class Food101DataModule(LightningDataModule):
     def __init__(self, data_dir='data', batch_size=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
-        self.dataset = IndexedFood101
+        self.dataset = torchvision.datasets.Food101
         self.dataset_train = self.dataset_val = None
 
     def setup(self, stage: str):

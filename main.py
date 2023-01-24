@@ -94,10 +94,10 @@ class LitResnet(LightningModule):
         count = 0
 
         with torch.inference_mode():
-            for dataid, x, y in tqdm(train_loader):
+            for x, y in tqdm(train_loader):
                 x = x.cuda()
                 out = model(x)
-                for data_i, out_i, y_i in zip(dataid, out, y):
+                for out_i, y_i in zip(out, y):
                     if class_count[y_i] >= num_samples:
                         continue
                     class_count[y_i] += 1
@@ -185,11 +185,12 @@ class LitResnet(LightningModule):
         return F.log_softmax(topk_sim, dim=1)
 
     def training_step(self, batch, batch_idx):
-        id, x, y = batch
+        x, y = batch
         logits = self(x)
         loss = F.nll_loss(logits, y)
         self.log("train_loss", loss)
-        return {'id': id, 'x': x, 'loss': loss}
+
+        return {'loss': loss}
 
     '''
     def on_train_batch_end(self, outputs, batch, batch_idx):
@@ -225,7 +226,7 @@ class LitResnet(LightningModule):
     '''
 
     def evaluate(self, batch, stage=None):
-        id, x, y = batch
+        x, y = batch
         logits = self(x)
         loss = F.nll_loss(logits, y)
         preds = torch.argmax(logits, dim=1)
