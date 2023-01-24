@@ -79,43 +79,36 @@ class LitResnet(LightningModule):
             max_num_samples = 800
             num_samples = 40
         elif self.args.dataset == 'fgvcaircraft':
-            max_num_samples = 100
-            num_samples = 100
+            max_num_samples = 32
         elif self.args.dataset == 'food101':
             max_num_samples = 750
-            num_samples = 750
         else:
             raise NotImplementedError
 
-        model = self.backbone.cuda()
-        model.eval()
+        backbone = self.backbone.cuda()
+        backbone.eval()
         memory_list = [None] * self.num_classes
-        class_count = [0] * self.num_classes
         count = 0
 
         with torch.inference_mode():
             for x, y in tqdm(train_loader):
                 x = x.cuda()
-                out = model(x)
+                out = backbone(x)
                 for out_i, y_i in zip(out, y):
-                    if class_count[y_i] >= num_samples:
+                    if memory_list[y_i] is not None and len(memory_list[y_i]) == max_num_samples:
                         continue
-                    class_count[y_i] += 1
 
                     out_i = out_i.unsqueeze(0)
                     if memory_list[y_i] is None:
                         memory_list[y_i] = [out_i]
                     else:
-                        memory_list[y_i].append(out_i) # + torch.cat([memory_list[y_i], out_i], dim=0)
+                        memory_list[y_i].append(out_i)
 
         for c in range(self.num_classes):
             memory_list[c] = torch.cat(memory_list[c], dim=0)
 
         # num classes, num images, dim
         memory_list = torch.stack(memory_list, dim=0)
-
-        # num classes * num_images, dim
-        # memory_list = torch.cat(memory_list, dim=0)
 
         memory_list = memory_list.detach()
         memory_list.requires_grad = False
@@ -185,6 +178,7 @@ class LitResnet(LightningModule):
         return F.log_softmax(topk_sim, dim=1)
 
     def training_step(self, batch, batch_idx):
+        self.backbone.eval()
         x, y = batch
         logits = self(x)
         loss = F.nll_loss(logits, y)
@@ -273,7 +267,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset path containing the root dir of pascal & coco')
-    parser.add_argument('--dataset', type=str, default='food101', help='Experiment dataset')
+    parser.add_argument('--dataset', type=str, default=None, help='Experiment dataset')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--bsz', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
