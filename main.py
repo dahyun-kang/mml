@@ -273,12 +273,12 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset path containing the root dir of pascal & coco')
-    parser.add_argument('--dataset', type=str, default='cifar100', help='Experiment dataset')
+    parser.add_argument('--dataset', type=str, default='food101', help='Experiment dataset')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--bsz', type=int, default=256, help='Batch size')
-    parser.add_argument('--lr', type=float, default=0.05, help='Learning rate')
+    parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
     parser.add_argument('--k', type=int, default=10, help='K KNN')
-    parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
+    parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     args = parser.parse_args()
 
