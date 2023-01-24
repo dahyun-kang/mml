@@ -130,11 +130,21 @@ class Places365DataModule(ImgSize224DataModule):
         return 365
 
 
+class FGVCAircraftDataModule(ImgSize224DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(train_split='train', val_split='val', *args, **kwargs)
+        self.dataset = torchvision.datasets.FGVCAircraft
+
+    @property
+    def num_classes(self) -> int:
+        return 100
+
 def return_datamodule(datapath, dataset, bsz):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
                     'places365': Places365DataModule,
+                    'fgvcaircraft': FGVCAircraftDataModule,
                     }
     datamodule = dataset_dict[dataset](
         data_dir=datapath,
