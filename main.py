@@ -226,20 +226,27 @@ class LitResnet(LightningModule):
         preds = torch.argmax(logits, dim=1)
         acc = accuracy(preds, y) * 100.
 
+        self.count_correct += (preds == y).int().sum()
+        self.count_valimgs += int(y.shape[0])
+
         if stage:
             self.log(f"{stage}_loss", loss, prog_bar=True)
             self.log(f"{stage}_acc", acc, prog_bar=True)
-        return {f'{stage}_loss': loss, f'{stage}_acc': acc}
+        return {f'{stage}_loss': loss}
 
     def validation_step(self, batch, batch_idx):
         return self.evaluate(batch, "val")
 
+    def on_validation_epoch_start(self):
+        self.count_correct = 0
+        self.count_valimgs = 0
+
     def validation_epoch_end(self, outputs):
         epoch = self.trainer.current_epoch
         batch_losses = [x["val_loss"] for x in outputs]
-        epoch_loss = torch.stack(batch_losses).mean()
-        batch_accs =  [x["val_acc"] for x in outputs]
-        epoch_acc = torch.stack(batch_accs).mean()
+        epoch_loss = torch.stack(batch_losses).mean()  # a bit inaccurate; drop_last=False
+        epoch_acc = self.count_correct / self.count_valimgs * 100.
+
         print(f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}\n')
         # return {'val_loss': epoch_loss, 'val_acc': epoch_acc}
 
