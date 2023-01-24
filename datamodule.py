@@ -64,11 +64,11 @@ class CIFAR100DataModule(CIFAR10DataModule):
         return 100
 
 
-class Food101DataModule(LightningDataModule):
-    def __init__(self, data_dir='data', batch_size=256, num_workers=0):
+class ImgSize224DataModule(LightningDataModule):
+    def __init__(self, data_dir='data', batch_size=256, num_workers=0, train_split=None, val_split=None):
         super().__init__()
         self.save_hyperparameters()
-        self.dataset = torchvision.datasets.Food101
+        self.dataset = None  # torchvision.datasets.Food101
         self.dataset_train = self.dataset_val = None
 
     def setup(self, stage: str):
@@ -89,12 +89,8 @@ class Food101DataModule(LightningDataModule):
             ]
         )
 
-        self.dataset_train = self.dataset(root=self.hparams.data_dir, split='train', transform=train_transforms, download=True)
-        self.dataset_val = self.dataset(root=self.hparams.data_dir, split='test', transform=val_transforms, download=True)
-
-    @property
-    def num_classes(self) -> int:
-        return 101
+        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=train_transforms, download=False)
+        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=val_transforms, download=False)
 
     def train_dataloader(self):
         return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, shuffle=True)
@@ -114,10 +110,31 @@ class Food101DataModule(LightningDataModule):
         return self.val_dataloader()
 
 
+class Food101DataModule(ImgSize224DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(train_split='train', val_split='test', *args, **kwargs)
+        self.dataset = torchvision.datasets.Food101
+
+    @property
+    def num_classes(self) -> int:
+        return 101
+
+
+class Places365DataModule(ImgSize224DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(train_split='train-standard', val_split='val', *args, **kwargs)
+        self.dataset = torchvision.datasets.Places365
+
+    @property
+    def num_classes(self) -> int:
+        return 365
+
+
 def return_datamodule(datapath, dataset, bsz):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
+                    'places365': Places365DataModule,
                     }
     datamodule = dataset_dict[dataset](
         data_dir=datapath,
