@@ -27,31 +27,34 @@ class LitResnet(LightningModule):
         self.save_hyperparameters()
         self.args = self.hparams.args
         self.num_classes = dm.num_classes
-        self.model = self._init_model()
-        # self.fc = nn.Linear(512, self.num_classes)
-        # self.memory_list, self.memid_list = self._init_memory_list()
+        self.backbone = self._init_backbone()
+        self.fc = nn.Linear(512, self.num_classes)
         self.memory_list = self.memid_list = None
+        self.knnformer = nn.TransformerEncoderLayer(d_model=512,
+                                                    nhead=8,
+                                                    dim_feedforward=512,
+                                                    dropout=0.0,
+                                                    # activation=F.relu,
+                                                    layer_norm_eps=1e-05,
+                                                    batch_first=True,
+                                                    norm_first=True,
+                                                    device=self.device)
 
-        '''
-        self.memory_list = nn.Linear(*list(reversed(memory_list.shape)), bias=False)
-        with torch.no_grad():
-            self.memory_list.weight.copy_(memory_list)
-        '''
-
-    def _init_model(self):
-        model = torchvision.models.resnet18(weights=None, num_classes=1000)
+    def _init_backbone(self):
+        model = torchvision.models.resnet18(weights='IMAGENET1K_V1', num_classes=1000)
         model.fc = nn.Identity()
+        # model.avgpool = nn.Identity()
 
         # Retain img size at the shallowest layer
         if 'cifar' in self.args.dataset:
             model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
             model.maxpool = nn.Identity()
+
+        model.requires_grad_(requires_grad=False)
         return model
 
-    '''
     def on_fit_start(self):
         self.memory_list, self.memid_list = self._init_memory_list()
-    '''
 
     def _init_memory_list(self):
         train_loader = self.hparams.dm.unshuffled_train_dataloader()
@@ -80,7 +83,7 @@ class LitResnet(LightningModule):
         else:
             raise NotImplementedError
 
-        model = self.model.cuda()
+        model = self.backbone.cuda()
         model.eval()
         memory_list = [None] * self.num_classes
         # set dataid = -1 (dataid -> memid) to denote ignored ones
@@ -126,13 +129,39 @@ class LitResnet(LightningModule):
 
         return memory_list, memid_list
 
-    def Xforward(self, x):
-        out = self.model(x)
-        out = self.fc(out)
+    def forward(self, x):
+        out = self.backbone(x)
+
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+            # B, C, N -> B, C, K
+            topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
+            # 1, C, 1
+            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
+            # C, N, D [[1, C, 1], [B, C, K]] -> B, C, K, D
+            knnemb = self.memory_list[class_idx, indices]
+            # B, C, K, D -> B, C, D
+            knnemb_avg = torch.mean(knnemb, dim=2)
+            # (B, 1, D), (B, C, D) -> B, (1 + C), D
+            context_emb = torch.cat([out.unsqueeze(1), knnemb_avg], dim=1)
+
+        out = self.knnformer(context_emb)
+        out = self.fc(out[:, 0])
+
         return F.log_softmax(out, dim=1)
 
-    def forward(self, x):
-        out = self.model(x)
+    def forward_naiveaddedformer(self, x):
+        # this model flattens the output without pooling
+        # B (D H W)
+        out = self.backbone(x)
+
+        out = rearrange(out, 'b (d l) -> b l d', l=49, d=512)  # TODO: remove hardcode
+        out = self.knnformer(out)
+        out = self.fc(out.mean(dim=1))
+        return F.log_softmax(out, dim=1)
+
+    def forward_directknnmatching(self, x):
+        out = self.backbone(x)
 
         '''
         classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
@@ -178,7 +207,7 @@ class LitResnet(LightningModule):
         # track data id and replace the old embedding with the new one
         with torch.no_grad():
             id, x, _ = batch
-            emb = self.model(x)
+            emb = self.backbone(x)
             mem_id = torch.gather(input=self.memid_list, dim=0, index=id)
 
             if torch.all(mem_id == -1):
@@ -233,26 +262,17 @@ class LitResnet(LightningModule):
         self.evaluate(batch, "test")
 
     def configure_optimizers(self):
+        param_list = []
+        for k, v in self.named_parameters():
+            if not 'backbone' in k:
+                param_list.append(v)
         optimizer = torch.optim.SGD(
-            self.parameters(),
-            # self.memory_list.parameters(),
-            # self.fc.parameters(),
+            param_list,
+            # list(self.knnformer.parameters()) + list(self.fc.parameters()),
             lr=self.args.lr,
             momentum=0.9,
             weight_decay=5e-4,
         )
-        '''
-        steps_per_epoch = 45000 // self.args.bsz
-        scheduler_dict = {
-            "scheduler": OneCycleLR(
-                optimizer,
-                0.1,
-                epochs=self.trainer.max_epochs,
-                steps_per_epoch=steps_per_epoch,
-            ),
-            "interval": "step",
-        }
-        '''
 
         return {"optimizer": optimizer}
 
