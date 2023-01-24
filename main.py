@@ -29,7 +29,7 @@ class LitResnet(LightningModule):
         self.num_classes = dm.num_classes
         self.backbone = self._init_backbone()
         self.fc = nn.Linear(512, self.num_classes)
-        self.memory_list = self.memid_list = None
+        self.memory_list = None
         self.knnformer = nn.TransformerEncoderLayer(d_model=512,
                                                     nhead=8,
                                                     dim_feedforward=512,
@@ -41,6 +41,10 @@ class LitResnet(LightningModule):
                                                     device=self.device)
 
     def _init_backbone(self):
+        """
+        Init pretrained backbone
+        """
+        # TODO: Set backbone as args
         model = torchvision.models.resnet18(weights='IMAGENET1K_V1', num_classes=1000)
         model.fc = nn.Identity()
         # model.avgpool = nn.Identity()
@@ -54,7 +58,7 @@ class LitResnet(LightningModule):
         return model
 
     def on_fit_start(self):
-        self.memory_list, self.memid_list = self._init_memory_list()
+        self.memory_list = self._init_memory_list()
 
     def _init_memory_list(self):
         train_loader = self.hparams.dm.unshuffled_train_dataloader()
@@ -86,8 +90,6 @@ class LitResnet(LightningModule):
         model = self.backbone.cuda()
         model.eval()
         memory_list = [None] * self.num_classes
-        # set dataid = -1 (dataid -> memid) to denote ignored ones
-        memid_list = [-1] * (self.num_classes * max_num_samples)
         class_count = [0] * self.num_classes
         count = 0
 
@@ -99,10 +101,6 @@ class LitResnet(LightningModule):
                     if class_count[y_i] >= num_samples:
                         continue
                     class_count[y_i] += 1
-
-                    # dataid <- iteration id
-                    memid_list[data_i] = count
-                    count += 1
 
                     out_i = out_i.unsqueeze(0)
                     if memory_list[y_i] is None:
@@ -116,18 +114,13 @@ class LitResnet(LightningModule):
         # num classes, num images, dim
         memory_list = torch.stack(memory_list, dim=0)
 
-        # num classes * num images
-        memid_list = torch.tensor(memid_list).cuda()
-
         # num classes * num_images, dim
         # memory_list = torch.cat(memory_list, dim=0)
 
         memory_list = memory_list.detach()
         memory_list.requires_grad = False
-        memid_list = memid_list.detach()
-        memid_list.requires_grad = False
 
-        return memory_list, memid_list
+        return memory_list
 
     def forward(self, x):
         out = self.backbone(x)
@@ -198,9 +191,6 @@ class LitResnet(LightningModule):
         self.log("train_loss", loss)
         return {'id': id, 'x': x, 'loss': loss}
 
-    # def training_step_end(self, batch_parts): # ???????? 이걸로 하니 in-place anormality 탐지되더니 밑에걸로 하니까 사라짐
-    # training_step_end는 optim step 도중이고
-    # train_batch_end는 step 계산 끝난 이후인듯
     '''
     def on_train_batch_end(self, outputs, batch, batch_idx):
 
