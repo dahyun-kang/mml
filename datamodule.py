@@ -131,7 +131,7 @@ class Food101DataModule(LightningDataModule):
     def unshuffled_train_dataloader(self):
         if self.dataset_train is None:
             self.setup(stage='init')
-        return DataLoader(self.dataset_train, batch_size=1024, num_workers=self.hparams.num_workers, shuffle=False)
+        return DataLoader(self.dataset_train, batch_size=512, num_workers=self.hparams.num_workers, shuffle=False)
 
     def val_dataloader(self):
         return DataLoader(self.dataset_val, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
