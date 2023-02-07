@@ -70,9 +70,7 @@ class ImgSize224DataModule(LightningDataModule):
         self.save_hyperparameters()
         self.dataset = None  # torchvision.datasets.Food101
         self.dataset_train = self.dataset_val = None
-
-    def setup(self, stage: str):
-        train_transforms = torchvision.transforms.Compose(
+        self.train_transform = torchvision.transforms.Compose(
             [
                 torchvision.transforms.Resize((224, 224)),  # TODO: randomcrop?
                 torchvision.transforms.RandomHorizontalFlip(),
@@ -81,7 +79,7 @@ class ImgSize224DataModule(LightningDataModule):
             ]
         )
 
-        val_transforms = torchvision.transforms.Compose(
+        self.val_transform = torchvision.transforms.Compose(
             [
                 torchvision.transforms.Resize((224, 224)),
                 torchvision.transforms.ToTensor(),
@@ -89,8 +87,9 @@ class ImgSize224DataModule(LightningDataModule):
             ]
         )
 
-        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=train_transforms, download=False)
-        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=val_transforms, download=False)
+    def setup(self, stage: str):
+        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=self.train_transform, download=False)
+        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=self.val_transform, download=False)
 
     def train_dataloader(self):
         return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, shuffle=True)
@@ -124,6 +123,11 @@ class Places365DataModule(ImgSize224DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(train_split='train-standard', val_split='val', *args, **kwargs)
         self.dataset = torchvision.datasets.Places365
+
+    def setup(self, stage: str):
+        # small=True for small-image-size dataset
+        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=self.train_transform, download=False, small=True)
+        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=self.val_transform, download=False, small=True)
 
     @property
     def num_classes(self) -> int:

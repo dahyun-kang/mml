@@ -1,4 +1,5 @@
 """ Query-Adaptive Memory Referencing Classification """
+import os
 import argparse
 from tqdm import tqdm
 
@@ -282,6 +283,9 @@ if __name__ == '__main__':
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     args = parser.parse_args()
+
+    if args.dataset == 'places365':
+        args.datapath = os.path.join(args.datapath, 'places365')
 
     dm = return_datamodule(args.datapath, args.dataset, args.bsz)
     model = LitResnet(args, dm=dm)
