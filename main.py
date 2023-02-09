@@ -5,7 +5,6 @@ from tqdm import tqdm
 
 import torch
 from torch import nn
-from torch.optim.lr_scheduler import OneCycleLR
 import torch.nn.functional as F
 
 import torchvision
@@ -69,7 +68,7 @@ class LitResnet(LightningModule):
         elif self.args.dataset == 'cifar100':
             num_samples = 500
         elif self.args.dataset == 'places365':
-            max_num_samples = 5000
+            max_num_samples = 500  # max num sample is actually ~4K
             # num_samples = 3000
             num_samples = 1000
         elif self.args.dataset == 'caltech101':
@@ -188,26 +187,6 @@ class LitResnet(LightningModule):
         return {'loss': loss}
 
     '''
-    def on_train_batch_end(self, outputs, batch, batch_idx):
-
-        # track data id and replace the old embedding with the new one
-        with torch.no_grad():
-            id, x, _ = batch
-            emb = self.backbone(x)
-            mem_id = torch.gather(input=self.memid_list, dim=0, index=id)
-
-            if torch.all(mem_id == -1):
-                return
-
-            valid_mem_id = mem_id[mem_id != -1]
-            valid_emb = emb[mem_id != -1]
-
-            newmem = rearrange(self.memory_list, 'c n d -> (c n) d')
-            newmem.scatter_(dim=0, index=valid_mem_id.unsqueeze(1), src=valid_emb)
-            self.memory_list = rearrange(newmem, '(c n) d -> c n d', c=self.num_classes).clone()
-    '''
-
-    '''
     # 이걸 쓰면 왠진 몰라도 memory leak 이 생김 빡침
     def training_epoch_end(self, outputs):
         # print((self.memory_list_oldw == self.memory_list.weight).sum())
@@ -249,7 +228,6 @@ class LitResnet(LightningModule):
         epoch_acc = self.count_correct / self.count_valimgs * 100.
 
         print(f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}\n')
-        # return {'val_loss': epoch_loss, 'val_acc': epoch_acc}
 
     def test_step(self, batch, batch_idx):
         self.evaluate(batch, "test")
@@ -274,10 +252,10 @@ if __name__ == '__main__':
     seed_everything(7)
 
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
-    parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset path containing the root dir of pascal & coco')
+    parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset root path')
     parser.add_argument('--dataset', type=str, default=None, help='Experiment dataset')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
-    parser.add_argument('--bsz', type=int, default=256, help='Batch size')
+    parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
     parser.add_argument('--k', type=int, default=10, help='K KNN')
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
@@ -293,7 +271,7 @@ if __name__ == '__main__':
     trainer = Trainer(
         max_epochs=args.maxepochs,
         accelerator="auto",
-        devices=1 if torch.cuda.is_available() else None,  # limiting got iPython runs
+        devices=1 if torch.cuda.is_available() else None,
         logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qbmr-{args.dataset}'),
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
         num_sanity_val_steps=0,

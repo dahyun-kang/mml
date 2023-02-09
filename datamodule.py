@@ -154,9 +154,6 @@ def return_datamodule(datapath, dataset, bsz):
         data_dir=datapath,
         batch_size=bsz,
         num_workers=8,
-        # train_transforms=train_transforms,
-        # test_transforms=test_transforms,
-        # val_transforms=test_transforms,
     )
 
     return datamodule
