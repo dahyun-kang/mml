@@ -1,4 +1,4 @@
-""" Query-Adaptive Memory Referencing Classification """
+""" Memory Referencing Classification """
 import os
 import argparse
 from tqdm import tqdm
