@@ -64,20 +64,15 @@ class LitResnet(LightningModule):
         train_loader = self.hparams.dm.unshuffled_train_dataloader()
 
         if self.args.dataset == 'cifar10':
-            num_samples = 5000
+            max_num_samples = 5000
         elif self.args.dataset == 'cifar100':
-            num_samples = 500
+            max_num_samples = 500
         elif self.args.dataset == 'places365':
             max_num_samples = 500  # max num sample is actually ~4K
-            # num_samples = 3000
-            num_samples = 1000
         elif self.args.dataset == 'caltech101':
             max_num_samples = 800
-            # num_samples = 3000
-            num_samples = 40
         elif self.args.dataset == 'country211':
             max_num_samples = 800
-            num_samples = 40
         elif self.args.dataset == 'fgvcaircraft':
             max_num_samples = 32
         elif self.args.dataset == 'food101':
