@@ -77,6 +77,8 @@ class LitResnet(LightningModule):
             max_num_samples = 32
         elif self.args.dataset == 'food101':
             max_num_samples = 750
+        elif self.args.dataset == 'stl10':
+            max_num_samples = 500
         else:
             raise NotImplementedError
 

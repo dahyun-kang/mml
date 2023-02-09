@@ -88,8 +88,8 @@ class ImgSize224DataModule(LightningDataModule):
         )
 
     def setup(self, stage: str):
-        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=self.train_transform, download=False)
-        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=self.val_transform, download=False)
+        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=self.train_transform, download=True)
+        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=self.val_transform, download=True)
 
     def train_dataloader(self):
         return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, shuffle=True)
@@ -143,12 +143,24 @@ class FGVCAircraftDataModule(ImgSize224DataModule):
     def num_classes(self) -> int:
         return 100
 
+
+class STL10DataModule(ImgSize224DataModule):  # STL images are 96x96 pixels
+    def __init__(self, *args, **kwargs):
+        super().__init__(train_split='train', val_split='test', *args, **kwargs)
+        self.dataset = torchvision.datasets.STL10
+
+    @property
+    def num_classes(self) -> int:
+        return 10
+
+
 def return_datamodule(datapath, dataset, batchsize):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
                     'places365': Places365DataModule,
                     'fgvcaircraft': FGVCAircraftDataModule,
+                    'stl10': STL10DataModule,
                     }
     datamodule = dataset_dict[dataset](
         data_dir=datapath,
