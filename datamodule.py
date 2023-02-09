@@ -143,7 +143,7 @@ class FGVCAircraftDataModule(ImgSize224DataModule):
     def num_classes(self) -> int:
         return 100
 
-def return_datamodule(datapath, dataset, bsz):
+def return_datamodule(datapath, dataset, batchsize):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
@@ -152,7 +152,7 @@ def return_datamodule(datapath, dataset, bsz):
                     }
     datamodule = dataset_dict[dataset](
         data_dir=datapath,
-        batch_size=bsz,
+        batch_size=batchsize,
         num_workers=8,
     )
 
