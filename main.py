@@ -23,7 +23,7 @@ import clip
 import PIL.Image as Image
 
 
-class LitResnet(LightningModule):
+class MemClsLearner(LightningModule):
     def __init__(self, args, dm):
         super().__init__()
 
@@ -283,7 +283,7 @@ if __name__ == '__main__':
         args.datapath = os.path.join(args.datapath, 'places365')
 
     dm = return_datamodule(args.datapath, args.dataset, args.batchsize)
-    model = LitResnet(args, dm=dm)
+    model = MemClsLearner(args, dm=dm)
 
     trainer = Trainer(
         max_epochs=args.maxepochs,
