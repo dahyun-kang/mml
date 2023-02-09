@@ -19,6 +19,9 @@ from torchmetrics.functional import accuracy
 from einops import rearrange
 from datamodule import return_datamodule
 
+import clip
+import PIL.Image as Image
+
 
 class LitResnet(LightningModule):
     def __init__(self, args, dm):
@@ -28,31 +31,46 @@ class LitResnet(LightningModule):
         self.args = self.hparams.args
         self.num_classes = dm.num_classes
         self.backbone = self._init_backbone()
-        self.fc = nn.Linear(512, self.num_classes)
+        self.dim = 512
+
+        self.fc = nn.Linear(self.dim, self.num_classes)
         self.memory_list = None
-        self.knnformer = nn.TransformerEncoderLayer(d_model=512,
+        self.knnformer = nn.TransformerEncoderLayer(d_model=self.dim,
                                                     nhead=8,
-                                                    dim_feedforward=512,
+                                                    dim_feedforward=self.dim,
                                                     dropout=0.0,
                                                     # activation=F.relu,
                                                     layer_norm_eps=1e-05,
                                                     batch_first=True,
                                                     norm_first=True,
-                                                    device=self.device)
+                                                    device=self.device,
+                                                    )
+        if args.backbone == 'resnet50':
+            self.knnformer = nn.Sequential(
+                nn.Linear(2048, self.dim),
+                self.knnformer,
+            )
 
     def _init_backbone(self):
-        """
-        Init pretrained backbone
-        """
-        # TODO: Set backbone as args
-        model = torchvision.models.resnet18(weights='IMAGENET1K_V1', num_classes=1000)
-        model.fc = nn.Identity()
-        # model.avgpool = nn.Identity()
+        """ Init pretrained backbone """
+        if 'resnet' in self.args.backbone:
+            if self.args.backbone == 'resnet18':
+                model = torchvision.models.resnet18(weights='IMAGENET1K_V1', num_classes=1000)
+            elif self.args.backbone == 'resnet50':
+                model = torchvision.models.resnet50(weights='IMAGENET1K_V1', num_classes=1000)
+            else:
+                raise NotImplementedError
 
-        # Retain img size at the shallowest layer
-        if 'cifar' in self.args.dataset:
-            model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-            model.maxpool = nn.Identity()
+            model.fc = nn.Identity()
+            # model.avgpool = nn.Identity()
+
+            # Retain img size at the shallowest layer
+            if 'cifar' in self.args.dataset:
+                model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+                model.maxpool = nn.Identity()
+        elif self.args.backbone == 'clipvitb':
+            model, preprocess = clip.load("ViT-B/32")
+            model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
 
         model.requires_grad_(requires_grad=False)
         return model
@@ -128,7 +146,8 @@ class LitResnet(LightningModule):
             # (B, 1, D), (B, C, D) -> B, (1 + C), D
             context_emb = torch.cat([out.unsqueeze(1), knnemb_avg], dim=1)
 
-        out = self.knnformer(context_emb)
+        # CLIP feature type conversion: half (16) -> float (32)
+        out = self.knnformer(context_emb.float())
         out = self.fc(out[:, 0])
 
         return F.log_softmax(out, dim=1)
@@ -138,7 +157,7 @@ class LitResnet(LightningModule):
         # B (D H W)
         out = self.backbone(x)
 
-        out = rearrange(out, 'b (d l) -> b l d', l=49, d=512)  # TODO: remove hardcode
+        out = rearrange(out, 'b (d l) -> b l d', l=49, d=self.dim)  # TODO: remove hardcode
         out = self.knnformer(out)
         out = self.fc(out.mean(dim=1))
         return F.log_softmax(out, dim=1)
@@ -251,6 +270,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset root path')
     parser.add_argument('--dataset', type=str, default=None, help='Experiment dataset')
+    parser.add_argument('--backbone', type=str, default='resnet18', help='Backbone')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
