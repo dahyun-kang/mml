@@ -1,5 +1,11 @@
 # memory classification
 
+## conda installtation command
+```bash
+conda env create -f environment.yml --prefix $YOURPREFIX
+```
+`$YOUPREFIX` is typically `/home/anaconda3`
+
 
 ## training command 
 ```python
