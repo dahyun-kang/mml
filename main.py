@@ -152,6 +152,11 @@ class MemClsLearner(LightningModule):
 
         return F.log_softmax(out, dim=1)
 
+    def forward_simplefc(self, x):
+        out = self.backbone(x)
+        out = self.fc(out)
+        return F.log_softmax(out, dim=1)
+
     def forward_naiveaddedformer(self, x):
         # this model flattens the output without pooling
         # B (D H W)
