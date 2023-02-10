@@ -282,7 +282,7 @@ if __name__ == '__main__':
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
 
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize)
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
     model = MemClsLearner(args, dm=dm)
 
     trainer = Trainer(

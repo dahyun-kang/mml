@@ -5,7 +5,7 @@ from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, im
 
 
 class CIFAR10DataModule(LightningDataModule):
-    def __init__(self, data_dir='data', batch_size=256, num_workers=0):
+    def __init__(self, datadir='data', imgsize=32, batchsize=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = torchvision.datasets.CIFAR10
@@ -15,6 +15,7 @@ class CIFAR10DataModule(LightningDataModule):
         train_transforms = torchvision.transforms.Compose(
             [
                 torchvision.transforms.RandomCrop(32, padding=4),
+                torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),
                 torchvision.transforms.RandomHorizontalFlip(),
                 torchvision.transforms.ToTensor(),
                 cifar10_normalization(),
@@ -23,28 +24,29 @@ class CIFAR10DataModule(LightningDataModule):
 
         val_transforms = torchvision.transforms.Compose(
             [
+                torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),
                 torchvision.transforms.ToTensor(),
                 cifar10_normalization(),
             ]
         )
 
-        self.dataset_train = self.dataset(root=self.hparams.data_dir, train=True, transform=train_transforms, download=True)
-        self.dataset_val = self.dataset(root=self.hparams.data_dir, train=False, transform=val_transforms, download=True)
+        self.dataset_train = self.dataset(root=self.hparams.datadir, train=True, transform=train_transforms, download=True)
+        self.dataset_val = self.dataset(root=self.hparams.datadir, train=False, transform=val_transforms, download=True)
 
     @property
     def num_classes(self) -> int:
         return 10
 
     def train_dataloader(self):
-        return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, shuffle=True)
+        return DataLoader(self.dataset_train, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=True)
 
     def unshuffled_train_dataloader(self):
         if self.dataset_train is None:
             self.setup(stage='init')
-        return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, shuffle=False)
+        return DataLoader(self.dataset_train, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False)
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
+        return DataLoader(self.dataset_val, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     def test_dataloader(self):
         return self.val_dataloader()
@@ -54,7 +56,7 @@ class CIFAR10DataModule(LightningDataModule):
 
 
 class CIFAR100DataModule(CIFAR10DataModule):
-    def __init__(self, data_dir='data', batch_size=256, num_workers=0):
+    def __init__(self, datadir='data', batchsize=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = torchvision.datasets.CIFAR100
@@ -65,14 +67,14 @@ class CIFAR100DataModule(CIFAR10DataModule):
 
 
 class ImgSize224DataModule(LightningDataModule):
-    def __init__(self, data_dir='data', batch_size=256, num_workers=0, train_split=None, val_split=None):
+    def __init__(self, datadir='data', imgsize=224, batchsize=256, num_workers=0, train_split=None, val_split=None):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = None  # torchvision.datasets.Food101
         self.dataset_train = self.dataset_val = None
         self.train_transform = torchvision.transforms.Compose(
             [
-                torchvision.transforms.Resize((224, 224)),  # TODO: randomcrop?
+                torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),  # TODO: randomcrop?
                 torchvision.transforms.RandomHorizontalFlip(),
                 torchvision.transforms.ToTensor(),
                 imagenet_normalization(),
@@ -81,18 +83,18 @@ class ImgSize224DataModule(LightningDataModule):
 
         self.val_transform = torchvision.transforms.Compose(
             [
-                torchvision.transforms.Resize((224, 224)),
+                torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),
                 torchvision.transforms.ToTensor(),
                 imagenet_normalization(),
             ]
         )
 
     def setup(self, stage: str):
-        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=self.train_transform, download=True)
-        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=self.val_transform, download=True)
+        self.dataset_train = self.dataset(root=self.hparams.datadir, split=self.hparams.train_split, transform=self.train_transform, download=True)
+        self.dataset_val = self.dataset(root=self.hparams.datadir, split=self.hparams.val_split, transform=self.val_transform, download=True)
 
     def train_dataloader(self):
-        return DataLoader(self.dataset_train, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers, shuffle=True)
+        return DataLoader(self.dataset_train, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=True)
 
     def unshuffled_train_dataloader(self):
         if self.dataset_train is None:
@@ -100,7 +102,7 @@ class ImgSize224DataModule(LightningDataModule):
         return DataLoader(self.dataset_train, batch_size=512, num_workers=self.hparams.num_workers, shuffle=False)
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.hparams.batch_size, num_workers=self.hparams.num_workers)
+        return DataLoader(self.dataset_val, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     def test_dataloader(self):
         return self.val_dataloader()
@@ -126,8 +128,8 @@ class Places365DataModule(ImgSize224DataModule):
 
     def setup(self, stage: str):
         # small=True for small-image-size dataset
-        self.dataset_train = self.dataset(root=self.hparams.data_dir, split=self.hparams.train_split, transform=self.train_transform, download=False, small=True)
-        self.dataset_val = self.dataset(root=self.hparams.data_dir, split=self.hparams.val_split, transform=self.val_transform, download=False, small=True)
+        self.dataset_train = self.dataset(root=self.hparams.datadir, split=self.hparams.train_split, transform=self.train_transform, download=False, small=True)
+        self.dataset_val = self.dataset(root=self.hparams.datadir, split=self.hparams.val_split, transform=self.val_transform, download=False, small=True)
 
     @property
     def num_classes(self) -> int:
@@ -154,7 +156,7 @@ class STL10DataModule(ImgSize224DataModule):  # STL images are 96x96 pixels
         return 10
 
 
-def return_datamodule(datapath, dataset, batchsize):
+def return_datamodule(datapath, dataset, batchsize, backbone):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
@@ -162,9 +164,11 @@ def return_datamodule(datapath, dataset, batchsize):
                     'fgvcaircraft': FGVCAircraftDataModule,
                     'stl10': STL10DataModule,
                     }
+    imgsize = 32 if 'cifar' in dataset and 'resnet' in backbone else 224
     datamodule = dataset_dict[dataset](
-        data_dir=datapath,
-        batch_size=batchsize,
+        datadir=datapath,
+        imgsize=imgsize,
+        batchsize=batchsize,
         num_workers=8,
     )
 
