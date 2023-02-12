@@ -56,7 +56,7 @@ class CIFAR10DataModule(LightningDataModule):
 
 
 class CIFAR100DataModule(CIFAR10DataModule):
-    def __init__(self, datadir='data', batchsize=256, num_workers=0):
+    def __init__(self, datadir='data', imgsize=32, batchsize=256, num_workers=0):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = torchvision.datasets.CIFAR100
