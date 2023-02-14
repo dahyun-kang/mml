@@ -22,6 +22,8 @@ from datamodule import return_datamodule
 import clip
 import PIL.Image as Image
 
+from model.transformer import TransformerEncoderLayer
+
 
 class MemClsLearner(LightningModule):
     def __init__(self, args, dm):
@@ -35,16 +37,16 @@ class MemClsLearner(LightningModule):
 
         self.fc = nn.Linear(self.dim, self.num_classes)
         self.memory_list = None
-        self.knnformer = nn.TransformerEncoderLayer(d_model=self.dim,
-                                                    nhead=8,
-                                                    dim_feedforward=self.dim,
-                                                    dropout=0.0,
-                                                    # activation=F.relu,
-                                                    layer_norm_eps=1e-05,
-                                                    batch_first=True,
-                                                    norm_first=True,
-                                                    device=self.device,
-                                                    )
+        self.knnformer = TransformerEncoderLayer(d_model=self.dim,
+                                                 nhead=8,
+                                                 dim_feedforward=self.dim,
+                                                 dropout=0.0,
+                                                 # activation=F.relu,
+                                                 layer_norm_eps=1e-05,
+                                                 batch_first=True,
+                                                 norm_first=True,
+                                                 device=self.device,
+                                                 )
         if args.backbone == 'resnet50':
             self.knnformer = nn.Sequential(
                 nn.Linear(2048, self.dim),
@@ -154,7 +156,8 @@ class MemClsLearner(LightningModule):
             context_emb = torch.cat([out.unsqueeze(1), knnemb_avg], dim=1)
 
         # CLIP feature type conversion: half (16) -> float (32)
-        out = self.knnformer(context_emb.float())
+        context_emb = context_emb.float()
+        out = self.knnformer(context_emb, context_emb, context_emb)
         out = self.fc(out[:, 0])
 
         return F.log_softmax(out, dim=1)
@@ -179,7 +182,7 @@ class MemClsLearner(LightningModule):
 
         with torch.no_grad():
             num_samples = self.memory_list.shape[1]
-            all_features = self.memory_list.view([-1, self.memory_list.shape[2]]) 
+            all_features = self.memory_list.view([-1, self.memory_list.shape[2]])
 
             similarity_mat = torch.einsum('b d, n d -> b n', F.normalize(out, dim=-1), F.normalize(all_features, dim=-1))
 
