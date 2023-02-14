@@ -11,6 +11,7 @@ conda env create -f environment.yml --prefix $YOURPREFIX
 ```python
 python main.py \
     --datapath $YOURDATASETPATH \
+    --backbone {resnet18/resnet50/clipRN50/clipvitb} \
     --dataset {cifar10/cifar100/food101/places365/fgvcaircraft/stl10} \
     --logpath $YOURLOGPATH
 ```
