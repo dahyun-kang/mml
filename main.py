@@ -73,7 +73,7 @@ class MemClsLearner(LightningModule):
             model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
         elif self.args.backbone == 'clipRN50':
             model, preprocess = clip.load("RN50")
-            model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
+            model.forward = model.encode_image
 
         model.requires_grad_(requires_grad=False)
         return model
@@ -170,8 +170,6 @@ class MemClsLearner(LightningModule):
                     stack.append(item)
                 else:
                     stack.pop()
-            
-            # return input[0] if not stack else stack[0]
 
             onehot = (input[0] if not stack else stack[0]).cpu().item()
             result = torch.tensor([0.]*self.num_classes)
@@ -295,7 +293,7 @@ class MemClsLearner(LightningModule):
         print(f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}\n')
 
     def test_step(self, batch, batch_idx):
-        return self.evaluate(batch, "test")
+        self.evaluate(batch, "test")
 
     def configure_optimizers(self):
         param_list = []
