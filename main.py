@@ -65,18 +65,25 @@ class MemClsLearner(LightningModule):
             # model.avgpool = nn.Identity()
 
             # Retain img size at the shallowest layer
-            if 'cifar' in self.args.dataset:
+            if 'cifar' in self.args.dataset and not args.reproduce:
                 model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
                 model.maxpool = nn.Identity()
         elif self.args.backbone == 'clipvitb':
             model, preprocess = clip.load("ViT-B/32")
             model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
+        elif self.args.backbone == 'clipRN50':
+            model, preprocess = clip.load("RN50")
+            model.forward = model.encode_image
 
         model.requires_grad_(requires_grad=False)
         return model
 
     def on_fit_start(self):
         self.memory_list = self._init_memory_list()
+
+    def on_test_start(self):
+        if self.memory_list == None:
+            self.memory_list = self._init_memory_list()
 
     def _init_memory_list(self):
         train_loader = self.hparams.dm.unshuffled_train_dataloader()
@@ -100,14 +107,14 @@ class MemClsLearner(LightningModule):
         else:
             raise NotImplementedError
 
-        backbone = self.backbone.cuda()
+        backbone = self.backbone.to(self.device)
         backbone.eval()
         memory_list = [None] * self.num_classes
         count = 0
 
         with torch.inference_mode():
             for x, y in tqdm(train_loader):
-                x = x.cuda()
+                x = x.to(self.device)
                 out = backbone(x)
                 for out_i, y_i in zip(out, y):
                     if memory_list[y_i] is not None and len(memory_list[y_i]) == max_num_samples:
@@ -151,6 +158,37 @@ class MemClsLearner(LightningModule):
         out = self.fc(out[:, 0])
 
         return F.log_softmax(out, dim=1)
+
+    def forward_reproduce(self, x):
+        out = self.backbone(x)
+
+        def majority_vote(input):
+            stack = []
+
+            for item in input:
+                if not stack or stack[-1] == item:
+                    stack.append(item)
+                else:
+                    stack.pop()
+
+            onehot = (input[0] if not stack else stack[0]).cpu().item()
+            result = torch.tensor([0.]*self.num_classes)
+            result[onehot] = 1.0
+
+            return result.to(self.device)
+
+        with torch.no_grad():
+            num_samples = self.memory_list.shape[1]
+            all_features = self.memory_list.view([-1, self.memory_list.shape[2]]) 
+
+            similarity_mat = torch.einsum('b d, n d -> b n', F.normalize(out, dim=-1), F.normalize(all_features, dim=-1))
+
+            topk_sim, indices = similarity_mat.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
+
+            indices = (indices/num_samples).type(torch.int32)
+            voting_result = torch.stack(list(map(majority_vote, indices)))
+
+        return voting_result
 
     def forward_simplefc(self, x):
         out = self.backbone(x)
@@ -235,6 +273,10 @@ class MemClsLearner(LightningModule):
             self.log(f"{stage}_acc", acc, prog_bar=True)
         return {f'{stage}_loss': loss}
 
+    def on_test_epoch_start(self):
+        self.count_correct = 0
+        self.count_valimgs = 0
+
     def validation_step(self, batch, batch_idx):
         return self.evaluate(batch, "val")
 
@@ -282,6 +324,7 @@ if __name__ == '__main__':
     parser.add_argument('--k', type=int, default=10, help='K KNN')
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
+    parser.add_argument('--reproduce', action='store_true', help='Flag to run reproducing experiment')
     args = parser.parse_args()
 
     if args.dataset == 'places365':
@@ -289,6 +332,8 @@ if __name__ == '__main__':
 
     dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
     model = MemClsLearner(args, dm=dm)
+    if args.reproduce:
+        model.forward = model.forward_reproduce
 
     trainer = Trainer(
         max_epochs=args.maxepochs,
@@ -299,5 +344,6 @@ if __name__ == '__main__':
         num_sanity_val_steps=0,
     )
 
-    trainer.fit(model, dm)
+    if not args.reproduce:
+        trainer.fit(model, dm)
     trainer.test(model, datamodule=dm)
