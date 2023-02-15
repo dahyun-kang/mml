@@ -3,16 +3,37 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.core.datamodule import LightningDataModule
 from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, imagenet_normalization
 
+from PIL import Image
+try:
+    from torchvision.transforms import InterpolationMode
+    BICUBIC = InterpolationMode.BICUBIC
+except ImportError:
+    BICUBIC = Image.BICUBIC
+
+def _convert_image_to_rgb(image):
+    return image.convert("RGB")
+
+def clip_transform(n_px):
+    return torchvision.transforms.Compose([
+        torchvision.transforms.Resize(n_px, interpolation=BICUBIC),
+        torchvision.transforms.CenterCrop(n_px),
+        _convert_image_to_rgb,
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+    ])
 
 class CIFAR10DataModule(LightningDataModule):
-    def __init__(self, datadir='data', imgsize=32, batchsize=256, num_workers=0):
+    def __init__(self, datadir='data', imgsize=32, batchsize=256, num_workers=0, reproduce=False):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = torchvision.datasets.CIFAR10
         self.dataset_train = self.dataset_val = None
+        self.reproduce = reproduce
 
     def setup(self, stage: str):
-        train_transforms = torchvision.transforms.Compose(
+
+        train_transforms = clip_transform(self.hparams.imgsize) if self.reproduce else \
+            torchvision.transforms.Compose(
             [
                 torchvision.transforms.RandomCrop(32, padding=4),
                 torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),
@@ -21,8 +42,8 @@ class CIFAR10DataModule(LightningDataModule):
                 cifar10_normalization(),
             ]
         )
-
-        val_transforms = torchvision.transforms.Compose(
+        val_transforms = clip_transform(self.hparams.imgsize) if self.reproduce else \
+            torchvision.transforms.Compose(
             [
                 torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),
                 torchvision.transforms.ToTensor(),
@@ -56,10 +77,11 @@ class CIFAR10DataModule(LightningDataModule):
 
 
 class CIFAR100DataModule(CIFAR10DataModule):
-    def __init__(self, datadir='data', imgsize=32, batchsize=256, num_workers=0):
+    def __init__(self, datadir='data', imgsize=32, batchsize=256, num_workers=0, reproduce=False):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = torchvision.datasets.CIFAR100
+        self.reproduce = reproduce
 
     @property
     def num_classes(self) -> int:
@@ -67,12 +89,14 @@ class CIFAR100DataModule(CIFAR10DataModule):
 
 
 class ImgSize224DataModule(LightningDataModule):
-    def __init__(self, datadir='data', imgsize=224, batchsize=256, num_workers=0, train_split=None, val_split=None):
+    def __init__(self, datadir='data', imgsize=224, batchsize=256, num_workers=0, train_split=None, val_split=None, reproduce=False):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = None  # torchvision.datasets.Food101
         self.dataset_train = self.dataset_val = None
-        self.train_transform = torchvision.transforms.Compose(
+
+        self.train_transform = clip_transform(self.hparams.imgsize) if reproduce else \
+            torchvision.transforms.Compose(
             [
                 torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),  # TODO: randomcrop?
                 torchvision.transforms.RandomHorizontalFlip(),
@@ -80,8 +104,8 @@ class ImgSize224DataModule(LightningDataModule):
                 imagenet_normalization(),
             ]
         )
-
-        self.val_transform = torchvision.transforms.Compose(
+        self.val_transform = clip_transform(self.hparams.imgsize) if reproduce else \
+            torchvision.transforms.Compose(
             [
                 torchvision.transforms.Resize((self.hparams.imgsize, self.hparams.imgsize)),
                 torchvision.transforms.ToTensor(),
@@ -156,7 +180,7 @@ class STL10DataModule(ImgSize224DataModule):  # STL images are 96x96 pixels
         return 10
 
 
-def return_datamodule(datapath, dataset, batchsize, backbone):
+def return_datamodule(datapath, dataset, batchsize, backbone, reproduce = False):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
@@ -170,6 +194,7 @@ def return_datamodule(datapath, dataset, batchsize, backbone):
         imgsize=imgsize,
         batchsize=batchsize,
         num_workers=8,
+        reproduce = reproduce # TODO change argument reproduce -> clip for future clip based model's works
     )
 
     return datamodule
