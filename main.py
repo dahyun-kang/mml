@@ -401,4 +401,5 @@ if __name__ == '__main__':
 
     if not args.reproduce:
         trainer.fit(model, dm)
-    trainer.test(model, datamodule=dm)
+    else:
+        trainer.test(model, datamodule=dm)
