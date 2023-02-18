@@ -30,8 +30,8 @@ class MemClsLearner(LightningModule):
     def __init__(self, args, dm):
         super().__init__()
 
-        self.save_hyperparameters()
-        self.args = self.hparams.args
+        self.args = args
+        self.dm = dm
         self.num_classes = dm.num_classes
         self.backbone = self._init_backbone()
         self.dim = 512
@@ -107,7 +107,7 @@ class MemClsLearner(LightningModule):
             self.memory_list = self._init_memory_list()
 
     def _init_memory_list(self):
-        train_loader = self.hparams.dm.unshuffled_train_dataloader()
+        train_loader = self.dm.unshuffled_train_dataloader()
 
         if self.args.dataset == 'cifar10':
             max_num_samples = 5000
@@ -371,7 +371,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset root path')
     parser.add_argument('--dataset', type=str, default=None, help='Experiment dataset')
-    parser.add_argument('--backbone', type=str, default='resnet18', help='Backbone')
+    parser.add_argument('--backbone', type=str, default='resnet18', choices=['resnet18', 'resnet50', 'clipRN50', 'clipvitb'], help='Backbone; clip-trained model should have the keywoard \"clip\"')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
@@ -384,7 +384,7 @@ if __name__ == '__main__':
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
 
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.reproduce)
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
     model = MemClsLearner(args, dm=dm)
     if args.reproduce:
         model.forward = model.forward_reproduce
@@ -396,6 +396,7 @@ if __name__ == '__main__':
         logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
         num_sanity_val_steps=0,
+        # gradient_clip_val=5.0,
     )
 
     if not args.reproduce:
