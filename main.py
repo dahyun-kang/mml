@@ -78,7 +78,7 @@ class MemClsLearner(LightningModule):
             # model.avgpool = nn.Identity()
 
             # Retain img size at the shallowest layer
-            if 'cifar' in self.args.dataset and not args.reproduce:
+            if 'cifar' in self.args.dataset and not args.nakata22:
                 model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
                 model.maxpool = nn.Identity()
         elif self.args.backbone == 'clipvitb':
@@ -211,7 +211,7 @@ class MemClsLearner(LightningModule):
 
         return F.log_softmax(out, dim=1)
 
-    def forward_reproduce(self, x):
+    def forward_nakata22(self, x):
         out = self.backbone(x)
 
         def majority_vote(input):
@@ -378,7 +378,7 @@ if __name__ == '__main__':
     parser.add_argument('--k', type=int, default=10, help='K KNN')
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
-    parser.add_argument('--reproduce', action='store_true', help='Flag to run reproducing experiment')
+    parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
     args = parser.parse_args()
 
     if args.dataset == 'places365':
@@ -386,8 +386,8 @@ if __name__ == '__main__':
 
     dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
     model = MemClsLearner(args, dm=dm)
-    if args.reproduce:
-        model.forward = model.forward_reproduce
+    if args.nakata22:
+        model.forward = model.forward_nakata22
 
     trainer = Trainer(
         max_epochs=args.maxepochs,
@@ -399,7 +399,8 @@ if __name__ == '__main__':
         # gradient_clip_val=5.0,
     )
 
-    if not args.reproduce:
-        trainer.fit(model, dm)
-    else:
+    if args.nakata22:
+        # non-differentiable majority voting method, Nakata et al., ECCV 2022
         trainer.test(model, datamodule=dm)
+    else:
+        trainer.fit(model, dm)
