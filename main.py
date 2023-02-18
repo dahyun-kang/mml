@@ -1,5 +1,6 @@
 """ Memory Referencing Classification """
 import os
+import math
 import argparse
 from tqdm import tqdm
 
@@ -35,8 +36,18 @@ class MemClsLearner(LightningModule):
         self.backbone = self._init_backbone()
         self.dim = 512
 
-        self.fc = nn.Linear(self.dim, self.num_classes)
+        # self.fc = nn.Linear(self.dim, self.num_classes)
         self.memory_list = None
+        self.qinformer = TransformerEncoderLayer(d_model=self.dim,
+                                                 nhead=8,
+                                                 dim_feedforward=self.dim,
+                                                 dropout=0.0,
+                                                 # activation=F.relu,
+                                                 layer_norm_eps=1e-05,
+                                                 batch_first=True,
+                                                 norm_first=True,
+                                                 device=self.device,
+                                                 )
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=8,
                                                  dim_feedforward=self.dim,
@@ -81,7 +92,15 @@ class MemClsLearner(LightningModule):
         return model
 
     def on_fit_start(self):
-        self.memory_list = self._init_memory_list()
+        with torch.no_grad():
+            self.memory_list = self._init_memory_list()
+            self.memory_list = self.memory_list.float()
+
+            self.global_proto = self.memory_list.mean(dim=1)
+            self.global_proto = self.global_proto.detach()
+            self.global_proto.requires_grad = False
+
+            self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
 
     def on_test_start(self):
         if self.memory_list == None:
@@ -108,6 +127,7 @@ class MemClsLearner(LightningModule):
             max_num_samples = 500
         else:
             raise NotImplementedError
+        self.num_samples = max_num_samples
 
         backbone = self.backbone.to(self.device)
         backbone.eval()
@@ -141,6 +161,35 @@ class MemClsLearner(LightningModule):
 
     def forward(self, x):
         out = self.backbone(x)
+        out = out.float()
+
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, n d -> b n', out, self.memory_list)
+            # B, N -> B, K
+            topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
+
+            # C, N, D [[B, K]] -> B, K, D
+            knnemb = self.memory_list[indices]
+
+            # corresponding_proto = self.global_proto[class_ids]  # self.global_proto_learned(class_ids)
+
+            # B, 1, D
+            tr_q = out.unsqueeze(1).float()
+            # (B, 1, D), (B, C, D) -> B, (1 + C), D
+            tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
+
+        qout = self.qinformer(tr_q, tr_q, tr_q)
+        nout = self.knnformer(tr_q, tr_knn_cat, tr_knn_cat)
+
+        qout = torch.einsum('b d, c d -> b c', qout[:, 0], self.global_proto)
+        nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
+
+        return torch.log(0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1)))
+
+    def forward_classwiseknn(self, x):
+        out = self.backbone(x)
+        # CLIP feature type conversion: half (16) -> float (32)
+        out = out.float()
 
         with torch.no_grad():
             classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
@@ -155,10 +204,10 @@ class MemClsLearner(LightningModule):
             # (B, 1, D), (B, C, D) -> B, (1 + C), D
             context_emb = torch.cat([out.unsqueeze(1), knnemb_avg], dim=1)
 
-        # CLIP feature type conversion: half (16) -> float (32)
-        context_emb = context_emb.float()
-        out = self.knnformer(context_emb, context_emb, context_emb)
-        out = self.fc(out[:, 0])
+        tr_q = out.unsqueeze(1)
+        out = self.knnformer(tr_q, context_emb, context_emb)
+
+        sim = torch.einsum('b d, c d -> b c', out[:, 0], self.global_proto)
 
         return F.log_softmax(out, dim=1)
 
