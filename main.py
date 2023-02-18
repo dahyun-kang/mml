@@ -167,14 +167,16 @@ class MemClsLearner(LightningModule):
 
         def majority_vote(input):
             stack = []
-
+            count = [0]*self.num_classes
             for item in input:
+                count[item.cpu().item()] += 1
                 if not stack or stack[-1] == item:
                     stack.append(item)
                 else:
                     stack.pop()
 
-            onehot = (input[0] if not stack else stack[0]).cpu().item()
+            # onehot = (input[0] if not stack else stack[0]).cpu().item() # real majority vote
+            onehot = torch.argmax(torch.tensor(count)).item() # just vote
             result = torch.tensor([0.]*self.num_classes)
             result[onehot] = 1.0
 
@@ -188,7 +190,7 @@ class MemClsLearner(LightningModule):
 
             topk_sim, indices = similarity_mat.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
 
-            indices = (indices/num_samples).type(torch.int32)
+            indices = torch.div(indices, num_samples, rounding_mode='trunc')
             voting_result = torch.stack(list(map(majority_vote, indices)))
 
         return voting_result
@@ -333,7 +335,7 @@ if __name__ == '__main__':
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
 
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.reproduce)
     model = MemClsLearner(args, dm=dm)
     if args.reproduce:
         model.forward = model.forward_reproduce
