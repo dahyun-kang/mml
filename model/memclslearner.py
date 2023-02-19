@@ -26,7 +26,6 @@ class MemClsLearner(LightningModule):
         self.backbone = self._init_backbone()
         self.dim = 512
 
-        # self.fc = nn.Linear(self.dim, self.num_classes)
         self.memory_list = None
         _dtype = torch.float16 if 'clip' in args.backbone else torch.float32
         self.qinformer = TransformerEncoderLayer(d_model=self.dim,
@@ -217,9 +216,12 @@ class MemClsLearner(LightningModule):
 
         return voting_result
 
-    def forward_simplefc(self, x):
+    def forward_prototypematching(self, x):
         out = self.backbone(x)
-        out = self.fc(out)
+        tr_q = out.unsqueeze(1)
+
+        out = self.qinformer(tr_q, tr_q, tr_q)
+        out = torch.einsum('b d, c d -> b c', out[:, 0], self.global_proto)
         return F.log_softmax(out, dim=1)
 
     def forward_naiveaddedformer(self, x):
