@@ -38,7 +38,7 @@ class MemClsLearner(LightningModule):
 
         # self.fc = nn.Linear(self.dim, self.num_classes)
         self.memory_list = None
-        self._dtype = torch.float16 if 'clip' in args.backbone else torch.float32
+        _dtype = torch.float16 if 'clip' in args.backbone else torch.float32
         self.qinformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=8,
                                                  dim_feedforward=self.dim,
@@ -48,7 +48,7 @@ class MemClsLearner(LightningModule):
                                                  batch_first=True,
                                                  norm_first=True,
                                                  device=self.device,
-                                                 dtype=self._dtype,
+                                                 dtype=_dtype,
                                                  )
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=8,
@@ -59,7 +59,7 @@ class MemClsLearner(LightningModule):
                                                  batch_first=True,
                                                  norm_first=True,
                                                  device=self.device,
-                                                 dtype=self._dtype,
+                                                 dtype=_dtype,
                                                  )
         if args.backbone == 'resnet50':
             self.knnformer = nn.Sequential(
@@ -113,26 +113,7 @@ class MemClsLearner(LightningModule):
 
     def _init_memory_list(self):
         train_loader = self.dm.unshuffled_train_dataloader()
-
-        if self.args.dataset == 'cifar10':
-            max_num_samples = 5000
-        elif self.args.dataset == 'cifar100':
-            max_num_samples = 500
-        elif self.args.dataset == 'places365':
-            max_num_samples = 500  # max num sample is actually ~4K
-        elif self.args.dataset == 'caltech101':
-            max_num_samples = 800
-        elif self.args.dataset == 'country211':
-            max_num_samples = 800
-        elif self.args.dataset == 'fgvcaircraft':
-            max_num_samples = 32
-        elif self.args.dataset == 'food101':
-            max_num_samples = 750
-        elif self.args.dataset == 'stl10':
-            max_num_samples = 500
-        else:
-            raise NotImplementedError
-        self.num_samples = max_num_samples
+        max_num_samples = self.dm.max_num_samples
 
         backbone = self.backbone.to(self.device)
         backbone.eval()

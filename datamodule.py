@@ -80,6 +80,8 @@ class CIFAR10DataModule(LightningDataModule):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = torchvision.datasets.CIFAR10
+        self.max_num_samples = 5000
+
         self.dataset_train = self.dataset_val = None
         if use_clip_transform:
             self.train_transform = Transforms.clip_transform(imgsize)
@@ -119,6 +121,7 @@ class CIFAR100DataModule(CIFAR10DataModule):
         super().__init__(*args, **kwargs)
         self.save_hyperparameters()
         self.dataset = torchvision.datasets.CIFAR100
+        self.max_num_samples = 500
 
     @property
     def num_classes(self) -> int:
@@ -164,6 +167,7 @@ class Food101DataModule(ImgSize224DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(train_split='train', val_split='test', *args, **kwargs)
         self.dataset = torchvision.datasets.Food101
+        self.max_num_samples = 750
 
     @property
     def num_classes(self) -> int:
@@ -174,6 +178,7 @@ class Places365DataModule(ImgSize224DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(train_split='train-standard', val_split='val', *args, **kwargs)
         self.dataset = torchvision.datasets.Places365
+        self.max_num_samples = 500  # max num sample is actually ~4K
 
     def setup(self, stage: str):
         # small=True for small-image-size dataset
@@ -189,6 +194,7 @@ class FGVCAircraftDataModule(ImgSize224DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(train_split='train', val_split='val', *args, **kwargs)
         self.dataset = torchvision.datasets.FGVCAircraft
+        self.max_num_samples = 32
 
     @property
     def num_classes(self) -> int:
@@ -199,6 +205,7 @@ class STL10DataModule(ImgSize224DataModule):  # STL images are 96x96 pixels
     def __init__(self, *args, **kwargs):
         super().__init__(train_split='train', val_split='test', *args, **kwargs)
         self.dataset = torchvision.datasets.STL10
+        self.max_num_samples = 500
 
     @property
     def num_classes(self) -> int:
