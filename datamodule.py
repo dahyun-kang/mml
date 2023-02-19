@@ -6,28 +6,6 @@ from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, im
 
 class Transforms:
     @staticmethod
-    def cifar_train_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.RandomCrop(32, padding=4),
-                torchvision.transforms.Resize((imgsize, imgsize)),
-                torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.ToTensor(),
-                cifar10_normalization(),
-            ]
-        )
-
-    @staticmethod
-    def cifar_val_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.Resize((imgsize, imgsize)),
-                torchvision.transforms.ToTensor(),
-                cifar10_normalization(),
-            ]
-        )
-
-    @staticmethod
     def train_transform(imgsize):
         return torchvision.transforms.Compose(
             [
@@ -71,6 +49,31 @@ class Transforms:
             torchvision.transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
         ])
 
+    '''
+    # use these for training from scratch
+    @staticmethod
+    def cifar_train_transform(imgsize):
+        return torchvision.transforms.Compose(
+            [
+                torchvision.transforms.RandomCrop(32, padding=4),
+                torchvision.transforms.Resize((imgsize, imgsize)),
+                torchvision.transforms.RandomHorizontalFlip(),
+                torchvision.transforms.ToTensor(),
+                cifar10_normalization(),
+            ]
+        )
+
+    @staticmethod
+    def cifar_val_transform(imgsize):
+        return torchvision.transforms.Compose(
+            [
+                torchvision.transforms.Resize((imgsize, imgsize)),
+                torchvision.transforms.ToTensor(),
+                cifar10_normalization(),
+            ]
+        )
+    '''
+
 
 class CIFAR10DataModule(LightningDataModule):
     def __init__(self, datadir='data', imgsize=32, batchsize=256, num_workers=0, use_clip_transform=True):
@@ -82,8 +85,8 @@ class CIFAR10DataModule(LightningDataModule):
             self.train_transform = Transforms.clip_transform(imgsize)
             self.val_transform = Transforms.clip_transform(imgsize)
         else:
-            self.train_transform = Transforms.cifar_train_transform(imgsize)
-            self.val_transform = Transforms.cifar_val_transform(imgsize)
+            self.train_transform = Transforms.train_transform(imgsize)
+            self.val_transform = Transforms.val_transform(imgsize)
 
     @property
     def num_classes(self) -> int:
@@ -211,12 +214,10 @@ def return_datamodule(datapath, dataset, batchsize, backbone):
                     'stl10': STL10DataModule,
                     }
 
-    imgsize = 32 if 'cifar' in dataset and 'resnet' in backbone else 224
     use_clip_transform = True if 'clip' in backbone else False
-
     datamodule = dataset_dict[dataset](
         datadir=datapath,
-        imgsize=imgsize,
+        imgsize=224,
         batchsize=batchsize,
         num_workers=8,
         use_clip_transform=use_clip_transform,
