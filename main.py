@@ -38,6 +38,7 @@ class MemClsLearner(LightningModule):
 
         # self.fc = nn.Linear(self.dim, self.num_classes)
         self.memory_list = None
+        self._dtype = torch.float16 if 'clip' in args.backbone else torch.float32
         self.qinformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=8,
                                                  dim_feedforward=self.dim,
@@ -47,6 +48,7 @@ class MemClsLearner(LightningModule):
                                                  batch_first=True,
                                                  norm_first=True,
                                                  device=self.device,
+                                                 dtype=self._dtype,
                                                  )
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=8,
@@ -57,6 +59,7 @@ class MemClsLearner(LightningModule):
                                                  batch_first=True,
                                                  norm_first=True,
                                                  device=self.device,
+                                                 dtype=self._dtype,
                                                  )
         if args.backbone == 'resnet50':
             self.knnformer = nn.Sequential(
@@ -97,7 +100,6 @@ class MemClsLearner(LightningModule):
     def on_fit_start(self):
         with torch.no_grad():
             self.memory_list = self._init_memory_list()
-            self.memory_list = self.memory_list.float()
 
             self.global_proto = self.memory_list.mean(dim=1)
             self.global_proto = self.global_proto.detach()
@@ -164,7 +166,6 @@ class MemClsLearner(LightningModule):
 
     def forward(self, x):
         out = self.backbone(x)
-        out = out.float()
 
         with torch.no_grad():
             classwise_sim = torch.einsum('b d, n d -> b n', out, self.memory_list)
@@ -177,7 +178,7 @@ class MemClsLearner(LightningModule):
             # corresponding_proto = self.global_proto[class_ids]  # self.global_proto_learned(class_ids)
 
             # B, 1, D
-            tr_q = out.unsqueeze(1).float()
+            tr_q = out.unsqueeze(1)
             # (B, 1, D), (B, C, D) -> B, (1 + C), D
             tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
 
@@ -191,8 +192,6 @@ class MemClsLearner(LightningModule):
 
     def forward_classwiseknn(self, x):
         out = self.backbone(x)
-        # CLIP feature type conversion: half (16) -> float (32)
-        out = out.float()
 
         with torch.no_grad():
             classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
