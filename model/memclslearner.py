@@ -158,7 +158,10 @@ class MemClsLearner(LightningModule):
         qout = torch.einsum('b d, c d -> b c', qout[:, 0], self.global_proto)
         nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
 
-        return torch.log(0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1)))
+        # return torch.log(0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1)))
+        avgprob = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
+        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
+        return torch.log(avgprob)
 
     def forward_classwiseknn(self, x):
         out = self.backbone(x)
