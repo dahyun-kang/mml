@@ -77,10 +77,13 @@ class MemClsLearner(LightningModule):
             model.fc = nn.Identity()
             # model.avgpool = nn.Identity()
 
+            '''
+            # use this for training from scratch
             # Retain img size at the shallowest layer
             if 'cifar' in self.args.dataset and not args.nakata22:
                 model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
                 model.maxpool = nn.Identity()
+            '''
         elif self.args.backbone == 'clipvitb':
             model, preprocess = clip.load("ViT-B/32")
             model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
