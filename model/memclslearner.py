@@ -91,7 +91,8 @@ class MemClsLearner(LightningModule):
         return model
 
     def _init_generic_tokens(self):
-        _generic_tokens = torch.empty(200, 512, dtype=self.modeldtype, requires_grad=True)
+        _generic_tokens = torch.empty(self.args.ntokens, 512, dtype=self.modeldtype, requires_grad=True)
+        print(_generic_tokens.shape)
         generic_tokens = nn.Parameter(_generic_tokens.clone(), requires_grad=True)
         # moved to self.on_fit_start; should be called after params being loaded to cuda
         # nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
