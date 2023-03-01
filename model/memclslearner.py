@@ -9,7 +9,7 @@ import torch.nn.functional as F
 import torchvision
 
 from torch import nn
-from einops import rearrange
+from einops import rearrange, repeat
 from pytorch_lightning import LightningModule
 from torchmetrics.functional import accuracy
 
@@ -25,11 +25,12 @@ class MemClsLearner(LightningModule):
         self.num_classes = dm.num_classes
         self.backbone = self._init_backbone()
         self.dim = 512
+        self.nhead = 8
 
         self.memory_list = None
-        _dtype = torch.float16 if 'clip' in args.backbone else torch.float32
-        self.qinformer = TransformerEncoderLayer(d_model=self.dim,
-                                                 nhead=8,
+        self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
+        self.knnformer2 = TransformerEncoderLayer(d_model=self.dim,
+                                                 nhead=self.nhead,
                                                  dim_feedforward=self.dim,
                                                  dropout=0.0,
                                                  # activation=F.relu,
@@ -37,10 +38,10 @@ class MemClsLearner(LightningModule):
                                                  batch_first=True,
                                                  norm_first=True,
                                                  device=self.device,
-                                                 dtype=_dtype,
+                                                 dtype=self.modeldtype,
                                                  )
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
-                                                 nhead=8,
+                                                 nhead=self.nhead,
                                                  dim_feedforward=self.dim,
                                                  dropout=0.0,
                                                  # activation=F.relu,
@@ -48,8 +49,11 @@ class MemClsLearner(LightningModule):
                                                  batch_first=True,
                                                  norm_first=True,
                                                  device=self.device,
-                                                 dtype=_dtype,
+                                                 dtype=self.modeldtype,
                                                  )
+        _generic_tokens = torch.randn(200, 512, device='cuda').type(self.modeldtype)
+        self.generic_tokens = nn.Parameter(_generic_tokens.clone(), requires_grad=True)
+        self.register_parameter('generic_tokens', self.generic_tokens)
         if args.backbone == 'resnet50':
             self.knnformer = nn.Sequential(
                 nn.Linear(2048, self.dim),
@@ -94,7 +98,11 @@ class MemClsLearner(LightningModule):
             self.global_proto = self.global_proto.detach()
             self.global_proto.requires_grad = False
 
-            self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
+            # normalize
+            self.memory_list = F.normalize(self.memory_list, p=2, dim=-1)
+            self.global_proto = F.normalize(self.global_proto, p=2, dim=-1)
+
+            # self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
 
     def on_test_start(self):
         if self.memory_list == None:
@@ -135,16 +143,150 @@ class MemClsLearner(LightningModule):
         return memory_list
 
     def forward(self, x):
+        """
+        0301 m18
+        - unnormalized generic tokens as input
+        - standardized prototypes after update
+        - l2normalized features used
+        """
+
         out = self.backbone(x)
+        # normalize
+        out = F.normalize(out, p=2, dim=-1)
+        batchsize = out.shape[0]
 
         with torch.no_grad():
-            classwise_sim = torch.einsum('b d, n d -> b n', out, self.memory_list)
-            # B, N -> B, K
-            topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
+            classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+            if self.training:  # to ignore self-voting
+                # B, C, N -> B, C, K
+                topk_sim, indices = classwise_sim.topk(k=self.args.k + 1, dim=-1, largest=True, sorted=True)
+                # indices = indices[:, :, 1:]
+                top1_indices = indices[:, :, 0]
+                max_class_indices = top1_indices.argmax(dim=1)  # highly likely the self (or another twin in the feature space)
+                indices[range(batchsize), max_class_indices, :-1] = indices[range(batchsize), max_class_indices, 1:]
+                indices = indices[:, :, :-1]
+            else:
+                topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
 
-            # C, N, D [[B, K]] -> B, K, D
-            knnemb = self.memory_list[indices]
+            # 1, C, 1
+            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
+            # C, N, D [[1, C, 1], [B, C, K]] -> B, C, K, D
+            knnemb = self.memory_list[class_idx, indices]
 
+            knnemb = torch.cat([repeat(self.global_proto, 'c d -> b c 1 d', b=batchsize), knnemb], dim=2)
+            # knnemb = rearrange(knnemb, 'b c k d -> (b c) k d')
+            knnemb = rearrange(knnemb, 'b c k d -> b (c k) d')
+
+        # (M, D), (B, CK, D) -> B, M, D
+        updated_tokens = self.knnformer(repeat(self.generic_tokens, 'm d -> b m d', b=batchsize), knnemb, knnemb)
+        updated_tokens = F.normalize(updated_tokens, p=2, eps=1e-6, dim=-1)
+
+        # no kNN baseline; no prototype update at all!
+        # gtokens = self.generic_tokens.unsqueeze(0)
+        # _updated_proto = self.knnformer2(self.global_proto.unsqueeze(0), gtokens, gtokens)
+
+        # (B, C, D), (B, M, D) -> B, C, D
+        _updated_proto = self.knnformer2(repeat(self.global_proto, 'c d -> b c d', b=batchsize), updated_tokens, updated_tokens)
+
+        # standization & l2 normalization
+        _updated_proto = self.standardize(_updated_proto)
+        updated_proto = F.normalize(_updated_proto, p=2, eps=1e-6, dim=-1)
+
+        sim = torch.einsum('b d, b c d -> b c', out, updated_proto)
+
+        # no kNN baseline; no prototype update at all!
+        # sim = torch.einsum('b d, c d -> b c', out, updated_proto.squeeze(0))
+        return F.log_softmax(sim / 0.01, dim=1)
+
+    def forward_old_m151617(self, x):
+        idx = idx % self.dm.max_num_samples
+        out = self.backbone(x)
+        # normalize
+        out = F.normalize(out, p=2, dim=-1)
+        batchsize = out.shape[0]
+
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+            '''
+            if self.training:  # to ignore self-voting
+                # B, C, N -> B, C, K
+                topk_sim, indices = classwise_sim.topk(k=self.args.k + 1, dim=-1, largest=True, sorted=True)
+                # indices = indices[:, :, 1:]
+                top1_indices = indices[:, :, 0]
+                max_class_indices = top1_indices.argmax(dim=1)  # highly likely the self (or another twin in the feature space)
+                indices[range(batchsize), max_class_indices, :-1] = indices[range(batchsize), max_class_indices, 1:]
+                indices = indices[:, :, :-1]
+            else:
+                topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+            '''
+
+
+            ''' M15 noisy kNN; define a buffered pool and select k among them
+            topk_sim, indices = classwise_sim.topk(k=self.dm.max_num_samples // 4, dim=-1, largest=True, sorted=True)
+            rand_indices = torch.randint(low=0, high=self.dm.max_num_samples // 4, size=[batchsize, self.num_classes, self.args.k])
+            rand_indices = rand_indices.to(indices.device)
+            indices = torch.gather(input=indices, dim=-1, index=rand_indices)
+            '''
+
+            # 1, C, 1
+            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
+            # C, N, D [[1, C, 1], [B, C, K]] -> B, C, K, D
+            knnemb = self.memory_list[class_idx, indices]
+
+
+            ''' M16 convex-combinated kNN
+            cvx_coeff = torch.randn(1, 1, self.args.k, 1).to(knnemb.device).type(knnemb.dtype)
+            cvx_coeff = torch.softmax(cvx_coeff, dim=2)
+            knnemb = torch.sum(cvx_coeff * knnemb, dim=2)
+            knnemb = F.normalize(knnemb, p=2, dim=-1)
+            knnemb = torch.cat([repeat(self.global_proto, 'c d -> b c d', b=batchsize), knnemb], dim=1)
+            '''
+
+
+            ''' M17 fixed random pairs
+            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
+
+            pairs = []
+            for i in idx:
+                pair = self.memory_list[:, i + 1:i+self.args.k + 1]
+                pairs.append(pair)
+
+            pairs = torch.stack(pairs, dim=0).to(out.device).type(out.dtype)
+            knnemb = pairs
+            '''
+
+            knnemb = torch.cat([repeat(self.global_proto, 'c d -> b c 1 d', b=batchsize), knnemb], dim=2)
+            knnemb = rearrange(knnemb, 'b c k d -> (b c) k d')
+
+        # (B, C, D), (B, CK, D) -> B, C, D
+        updated_proto = self.knnformer(repeat(self.global_proto, 'c d -> (repeat c) 1 d', repeat=batchsize), knnemb, knnemb)
+        updated_proto = F.normalize(updated_proto, p=2, eps=1e-6, dim=-1)
+        sim = torch.einsum('b d, b c d -> b c', out, rearrange(updated_proto, '(b c) 1 d -> b c d', c=self.num_classes))
+
+        return F.log_softmax(sim / 0.01, dim=1)
+
+    def forward_m8_parallel_input_update_include_nearest_nol2normalization(self, x):
+        out = self.backbone(x)
+        batchsize = out.shape[0]
+
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+            if self.training:  # to ignore self-voting
+                # B, C, N -> B, C, K
+                topk_sim, indices = classwise_sim.topk(k=self.args.k + 1, dim=-1, largest=True, sorted=True)
+                # indices = indices[:, :, 1:]
+                top1_indices = indices[:, :, 0]
+                max_class_indices = top1_indices.argmax(dim=1)  # highly likely the self (or another twin in the feature space)
+                indices[range(batchsize), max_class_indices, :-1] = indices[range(batchsize), max_class_indices, 1:]
+                indices = indices[:, :, :-1]
+            else:
+                topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+
+            # 1, C, 1
+            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
+            # C, N, D [[1, C, 1], [B, C, K]] -> B, C, K, D
+            knnemb = self.memory_list[class_idx, indices]
+            knnemb = rearrange(knnemb, 'b c k d -> b (c k) d')
             # corresponding_proto = self.global_proto[class_ids]  # self.global_proto_learned(class_ids)
 
             # B, 1, D
@@ -341,4 +483,9 @@ class MemClsLearner(LightningModule):
         )
 
         return {"optimizer": optimizer}
+
+    def standardize(self, x, dim=1, eps=1e-6):
+        out = x - x.mean(dim=dim, keepdim=True)
+        out = out / (out.std(dim=dim, keepdim=True) + eps)
+        return out
 
