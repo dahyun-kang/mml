@@ -51,9 +51,9 @@ class MemClsLearner(LightningModule):
                                                  device=self.device,
                                                  dtype=self.modeldtype,
                                                  )
-        _generic_tokens = torch.randn(200, 512, device='cuda').type(self.modeldtype)
-        self.generic_tokens = nn.Parameter(_generic_tokens.clone(), requires_grad=True)
-        self.register_parameter('generic_tokens', self.generic_tokens)
+
+        self.generic_tokens = self._init_generic_tokens()
+
         if args.backbone == 'resnet50':
             self.knnformer = nn.Sequential(
                 nn.Linear(2048, self.dim),
@@ -90,6 +90,13 @@ class MemClsLearner(LightningModule):
         model.requires_grad_(requires_grad=False)
         return model
 
+    def _init_generic_tokens(self):
+        _generic_tokens = torch.empty(200, 512, dtype=self.modeldtype, requires_grad=True)
+        generic_tokens = nn.Parameter(_generic_tokens.clone(), requires_grad=True)
+        # moved to self.on_fit_start; should be called after params being loaded to cuda
+        # nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
+        return generic_tokens
+
     def on_fit_start(self):
         with torch.no_grad():
             self.memory_list = self._init_memory_list()
@@ -103,6 +110,8 @@ class MemClsLearner(LightningModule):
             self.global_proto = F.normalize(self.global_proto, p=2, dim=-1)
 
             # self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
+
+            self.generic_tokens = nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
 
     def on_test_start(self):
         if self.memory_list == None:
