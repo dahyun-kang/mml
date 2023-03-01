@@ -1,7 +1,6 @@
 import torchvision
 from torch.utils.data import DataLoader
 from pytorch_lightning.core.datamodule import LightningDataModule
-from pl_bolts.transforms.dataset_normalizations import cifar10_normalization, imagenet_normalization
 
 
 class Transforms:
@@ -12,7 +11,7 @@ class Transforms:
                 torchvision.transforms.Resize((imgsize, imgsize)),  # TODO: randomcrop?
                 torchvision.transforms.RandomHorizontalFlip(),
                 torchvision.transforms.ToTensor(),
-                imagenet_normalization(),
+                torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ]
         )
 
@@ -22,7 +21,7 @@ class Transforms:
             [
                 torchvision.transforms.Resize((imgsize, imgsize)),
                 torchvision.transforms.ToTensor(),
-                imagenet_normalization(),
+                torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ]
         )
 
@@ -51,6 +50,8 @@ class Transforms:
 
     '''
     # use these for training from scratch
+    from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
+
     @staticmethod
     def cifar_train_transform(imgsize):
         return torchvision.transforms.Compose(
