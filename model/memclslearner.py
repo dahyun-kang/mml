@@ -113,6 +113,7 @@ class MemClsLearner(LightningModule):
             # self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
 
             self.generic_tokens = nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
+            self.old_generic_tokens = self.generic_tokens.clone()
 
     def on_test_start(self):
         if self.memory_list == None:
@@ -200,6 +201,8 @@ class MemClsLearner(LightningModule):
 
         # standization & l2 normalization
         _updated_proto = self.standardize(_updated_proto)
+
+        # output becomes NaN if it's commented!!
         updated_proto = F.normalize(_updated_proto, p=2, eps=1e-6, dim=-1)
 
         sim = torch.einsum('b d, b c d -> b c', out, updated_proto)
@@ -467,6 +470,15 @@ class MemClsLearner(LightningModule):
     def on_validation_epoch_start(self):
         self.count_correct = 0
         self.count_valimgs = 0
+
+        with torch.no_grad():
+            # torch.set_printoptions(precision=2, edgeitems=50, linewidth=240)
+            diff = (self.old_generic_tokens - self.generic_tokens).abs()
+            print(diff.mean(), diff.mean().max())
+            print(diff)
+            print(self.generic_tokens)
+            print()
+            self.old_generic_tokens = self.generic_tokens.clone()
 
     def validation_epoch_end(self, outputs):
         epoch = self.trainer.current_epoch
