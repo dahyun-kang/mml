@@ -92,7 +92,6 @@ class MemClsLearner(LightningModule):
 
     def _init_generic_tokens(self):
         _generic_tokens = torch.empty(self.args.ntokens, 512, dtype=self.modeldtype, requires_grad=True)
-        print(_generic_tokens.shape)
         generic_tokens = nn.Parameter(_generic_tokens.clone(), requires_grad=True)
         # moved to self.on_fit_start; should be called after params being loaded to cuda
         # nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
@@ -190,7 +189,7 @@ class MemClsLearner(LightningModule):
 
         # (M, D), (B, CK, D) -> B, M, D
         updated_tokens = self.knnformer(repeat(self.generic_tokens, 'm d -> b m d', b=batchsize), knnemb, knnemb)
-        updated_tokens = F.normalize(updated_tokens, p=2, eps=1e-6, dim=-1)
+        # updated_tokens = F.normalize(updated_tokens, p=2, eps=1e-6, dim=-1)
 
         # no kNN baseline; no prototype update at all!
         # gtokens = self.generic_tokens.unsqueeze(0)
