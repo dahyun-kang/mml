@@ -23,7 +23,7 @@ if __name__ == '__main__':
     parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
     parser.add_argument('--k', type=int, default=10, help='K KNN')
-    parser.add_argument('--ntokens', type=int, default=10, help='Number of tokens')
+    parser.add_argument('--ntokens', type=int, default=0, help='Number of tokens')
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
