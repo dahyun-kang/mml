@@ -213,12 +213,23 @@ class STL10DataModule(ImgSize224DataModule):  # STL images are 96x96 pixels
         return 10
 
 
+class CarsDataModule(ImgSize224DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(train_split='train', val_split='test', *args, **kwargs)
+        self.dataset = torchvision.datasets.StanfordCars
+        self.max_num_samples = 24  # max is 40~50
+
+    @property
+    def num_classes(self) -> int:
+        return 196
+
 def return_datamodule(datapath, dataset, batchsize, backbone):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
                     'places365': Places365DataModule,
                     'fgvcaircraft': FGVCAircraftDataModule,
+                    'cars': CarsDataModule,
                     'stl10': STL10DataModule,
                     }
 
