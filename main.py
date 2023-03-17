@@ -27,7 +27,12 @@ if __name__ == '__main__':
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
+    parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
+    parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
     args = parser.parse_args()
+
+    args.many_shot_thr = 100
+    args.low_shot_thr = 20
 
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
