@@ -330,12 +330,23 @@ class Places_LT_DataModule(AbstractDataModule):
     def num_classes(self) -> int:
         return 365
 
+class CarsDataModule(ImgSize224DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(train_split='train', val_split='test', *args, **kwargs)
+        self.dataset = torchvision.datasets.StanfordCars
+        self.max_num_samples = 24  # max is 40~50
+
+    @property
+    def num_classes(self) -> int:
+        return 196
+
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
                     'food101': Food101DataModule,
                     'places365': Places365DataModule,
                     'fgvcaircraft': FGVCAircraftDataModule,
+                    'cars': CarsDataModule,
                     'stl10': STL10DataModule,
                     'imagenetLT': ImageNet_LT_DataModule,
                     'placesLT': Places_LT_DataModule

@@ -119,8 +119,8 @@ class MemClsLearner(LightningModule):
             self.global_proto.requires_grad = False
 
             # normalize
-            self.memory_list = F.normalize(self.memory_list, p=2, dim=-1)
-            self.global_proto = F.normalize(self.global_proto, p=2, dim=-1)
+            # self.memory_list = F.normalize(self.memory_list, p=2, dim=-1)
+            # self.global_proto = F.normalize(self.global_proto, p=2, dim=-1)
 
             # self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
 
@@ -165,7 +165,7 @@ class MemClsLearner(LightningModule):
 
         return memory_list
 
-    def forward(self, x):
+    def forward_m18_prototypeupdate_generictoken(self, x):
         """
         0301 m18
         - unnormalized generic tokens as input
@@ -290,7 +290,59 @@ class MemClsLearner(LightningModule):
 
         return F.log_softmax(sim / 0.01, dim=1)
 
-    def forward_m8_parallel_input_update_include_nearest_nol2normalization(self, x):
+    def forward_m8_1(self, x):
+        '''
+        <m8.1>
+        parellel transformers with global (class-agnostic) kNN
+
+        - parallel input update (knnformer1, knnformer2)
+        - avg probs
+        - no l2normalization
+        '''
+
+        out = self.backbone(x)
+        batchsize = out.shape[0]
+
+        with torch.no_grad():
+            if len(self.memory_list.shape) == 3:
+                self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
+
+            classwise_sim = torch.einsum('b d, n d -> b n', out, self.memory_list)
+            if self.training:  # to ignore self-voting
+                # B, C, N -> B, C, K
+                topk_sim, indices = classwise_sim.topk(k=self.args.k + 1, dim=-1, largest=True, sorted=True)
+                indices = indices[:, 1:]
+            else:
+                topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+
+            # N, D [[B, K] -> B, K, D
+            knnemb = self.memory_list[indices]
+
+            # B, 1, D
+            tr_q = out.unsqueeze(1)
+            # (B, 1, D), (B, K, D) -> B, (1 + K), D
+            tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
+
+        qout = self.knnformer(tr_q, tr_q, tr_q)
+        nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
+
+        qout = torch.einsum('b d, c d -> b c', qout[:, 0], self.global_proto)
+        nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
+
+        avgprob = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
+        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
+        return torch.log(avgprob)
+
+    def forward_m8_4(self, x):
+        '''
+        <m8.4>
+        parellel transformers with class-wise kNN
+
+        - parallel input update (knnformer1, knnformer2)
+        - avg probs
+        - no l2normalization
+        '''
+
         out = self.backbone(x)
         batchsize = out.shape[0]
 
@@ -299,9 +351,8 @@ class MemClsLearner(LightningModule):
             if self.training:  # to ignore self-voting
                 # B, C, N -> B, C, K
                 topk_sim, indices = classwise_sim.topk(k=self.args.k + 1, dim=-1, largest=True, sorted=True)
-                # indices = indices[:, :, 1:]
-                top1_indices = indices[:, :, 0]
-                max_class_indices = top1_indices.argmax(dim=1)  # highly likely the self (or another twin in the feature space)
+                top1_sim = topk_sim[:, :, 0]
+                max_class_indices = top1_sim.argmax(dim=1)  # highly likely the self (or another twin in the feature space)
                 indices[range(batchsize), max_class_indices, :-1] = indices[range(batchsize), max_class_indices, 1:]
                 indices = indices[:, :, :-1]
             else:
@@ -319,8 +370,8 @@ class MemClsLearner(LightningModule):
             # (B, 1, D), (B, C, D) -> B, (1 + C), D
             tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
 
-        qout = self.qinformer(tr_q, tr_q, tr_q)
-        nout = self.knnformer(tr_q, tr_knn_cat, tr_knn_cat)
+        qout = self.knnformer(tr_q, tr_q, tr_q)
+        nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
 
         qout = torch.einsum('b d, c d -> b c', qout[:, 0], self.global_proto)
         nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
