@@ -584,7 +584,7 @@ class MemClsLearner(LightningModule):
 
             result += f" | val_many: {np.mean(many_shot)*100.:.2f} | val_medium: {np.mean(medium_shot)*100.:.2f} | val_few: {np.mean(few_shot)*100.:.2f}"
 
-        result = "\n\n" + result + "\n\n"
+        result = "\n\n\n" + result + "\n"
         print(result)
 
     def test_step(self, batch, batch_idx):

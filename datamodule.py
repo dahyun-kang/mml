@@ -132,9 +132,6 @@ class AbstractDataModule(LightningDataModule):
 
 
     def sampler_loader(self):
-        print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-        print(dist.is_available())
-        print(dist.is_initialized())
 
         def is_dist_avail_and_initialized():
             if not dist.is_available():
@@ -142,7 +139,6 @@ class AbstractDataModule(LightningDataModule):
             if not dist.is_initialized():
                 return False
             return True
-
 
         def get_world_size():
             if not is_dist_avail_and_initialized():
@@ -154,8 +150,6 @@ class AbstractDataModule(LightningDataModule):
             if not is_dist_avail_and_initialized():
                 return 0
             return dist.get_rank()
-
-
 
         num_tasks = get_world_size()
         global_rank = get_rank()

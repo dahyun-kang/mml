@@ -37,7 +37,7 @@ if __name__ == '__main__':
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
 
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
     model = MemClsLearner(args, dm=dm)
     if args.nakata22:
         model.forward = model.forward_nakata22

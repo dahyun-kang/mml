@@ -71,7 +71,7 @@ class ClassAwareSampler (Sampler):
         for i, label in enumerate(data_source.targets):
             cls_data_list[label].append(i)
         self.data_iter_list = [RandomCycleIter(x) for x in cls_data_list]
-        self.num_samples = max([len(x) for x in cls_data_list]) * len(cls_data_list)
+        self.num_samples = len(data_source) # max([len(x) for x in cls_data_list]) * len(cls_data_list)
         self.num_samples_cls = num_samples_cls
         
     def __iter__ (self):
