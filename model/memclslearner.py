@@ -51,6 +51,13 @@ class MemClsLearner(LightningModule):
                                                  device=self.device,
                                                  dtype=self.modeldtype,
                                                  )
+        '''
+        self.linear = nn.Sequential(
+                          nn.Linear((1 + args.k) * self.dim, self.dim, dtype=self.modeldtype),
+                          nn.ReLU(inplace=True),
+                          nn.Linear(self.dim, self.dim, dtype=self.modeldtype),
+                      )
+        '''
 
         self.generic_tokens = self._init_generic_tokens()
 
@@ -117,6 +124,10 @@ class MemClsLearner(LightningModule):
     def on_test_start(self):
         if self.memory_list == None:
             self.memory_list = self._init_memory_list()
+
+        self.global_proto = self.memory_list.mean(dim=1)
+        self.global_proto = self.global_proto.detach()
+        self.global_proto.requires_grad = False
 
     def _init_memory_list(self):
         train_loader = self.dm.unshuffled_train_dataloader()
@@ -428,8 +439,9 @@ class MemClsLearner(LightningModule):
         out = self.backbone(x)
         tr_q = out.unsqueeze(1)
 
-        out = self.qinformer(tr_q, tr_q, tr_q)
+        out = self.knnformer(tr_q, tr_q, tr_q)
         out = torch.einsum('b d, c d -> b c', out[:, 0], self.global_proto)
+
         return F.log_softmax(out, dim=1)
 
     def forward_naiveaddedformer(self, x):
