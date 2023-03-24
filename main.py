@@ -10,6 +10,7 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from datamodule import return_datamodule
 from model.memclslearner import MemClsLearner
+from callbacks import CustomCheckpoint
 
 
 if __name__ == '__main__':
@@ -27,6 +28,8 @@ if __name__ == '__main__':
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
+    parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
+    parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
     args = parser.parse_args()
 
     if args.dataset == 'places365':
@@ -37,12 +40,13 @@ if __name__ == '__main__':
     if args.nakata22:
         model.forward = model.forward_nakata22
 
+    checkpoint_callback = CustomCheckpoint(args)
     trainer = Trainer(
         max_epochs=args.maxepochs,
         accelerator="auto",
         devices=1 if torch.cuda.is_available() else None,
         logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
-        callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
+        callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
         num_sanity_val_steps=0,
         # gradient_clip_val=5.0,
     )
@@ -51,4 +55,9 @@ if __name__ == '__main__':
         # non-differentiable majority voting method, Nakata et al., ECCV 2022
         trainer.test(model, datamodule=dm)
     else:
-        trainer.fit(model, dm)
+        if args.eval:
+            modelpath = checkpoint_callback.modelpath
+            model = MemClsLearner.load_from_checkpoint(modelpath, args=args, dm=dm)
+            trainer.test(model=model, datamodule=dm)
+        else:
+            trainer.fit(model, dm)
