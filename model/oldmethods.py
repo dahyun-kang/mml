@@ -104,7 +104,6 @@
 
         return F.log_softmax(topk_sim, dim=1)
 
-
     def forward_m18_prototypeupdate_generictoken(self, x):
         """
         0301 m18
@@ -469,3 +468,14 @@
 
         sim = torch.einsum('b d, c d -> b c', updated_input, self.global_proto)
         return F.log_softmax(sim, dim=1)
+
+    def forward_b6_simplelinear(self, x):
+        '''
+        b6
+        - pass the tensor to linear
+        '''
+        out = self.backbone(x)
+        out = self.linear(out)
+        sim = torch.einsum('b d, c d -> b c', out, self.global_proto)
+
+        return F.log_softmax(out, dim=1)

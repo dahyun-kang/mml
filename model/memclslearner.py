@@ -55,7 +55,8 @@ class MemClsLearner(LightningModule):
                                                  )
         '''
         self.linear = nn.Sequential(
-                          nn.Linear((1 + args.k) * self.dim, self.dim, dtype=self.modeldtype),
+                          # nn.Linear((1 + args.k) * self.dim, self.dim, dtype=self.modeldtype),
+                          nn.Linear(self.dim, self.dim, dtype=self.modeldtype),
                           nn.ReLU(inplace=True),
                           nn.Linear(self.dim, self.dim, dtype=self.modeldtype),
                       )
