@@ -10,7 +10,10 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from datamodule import return_datamodule
 from model.memclslearner import MemClsLearner
+
 from model.decoupled import Decoupled_learner
+from callbacks import CustomCheckpoint
+
 
 
 if __name__ == '__main__':
@@ -31,6 +34,9 @@ if __name__ == '__main__':
     parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
     parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
     parser.add_argument('--Decoupled', action='store_true', help='Flag to run reproducing expriement of Decoupled Learning')
+    parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
+    parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
+
     args = parser.parse_args()
 
     args.many_shot_thr = 100
@@ -47,12 +53,13 @@ if __name__ == '__main__':
         if args.nakata22:
             model.forward = model.forward_nakata22
 
+    checkpoint_callback = CustomCheckpoint(args)
     trainer = Trainer(
         max_epochs=args.maxepochs,
         accelerator="auto",
         devices=1 if torch.cuda.is_available() else None,
         logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
-        callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10)],
+        callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
         num_sanity_val_steps=0,
         # gradient_clip_val=5.0,
     )
@@ -61,4 +68,9 @@ if __name__ == '__main__':
         # non-differentiable majority voting method, Nakata et al., ECCV 2022
         trainer.test(model, datamodule=dm)
     else:
-        trainer.fit(model, dm)
+        if args.eval:
+            modelpath = checkpoint_callback.modelpath
+            model = MemClsLearner.load_from_checkpoint(modelpath, args=args, dm=dm)
+            trainer.test(model=model, datamodule=dm)
+        else:
+            trainer.fit(model, dm)
