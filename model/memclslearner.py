@@ -7,6 +7,7 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 import torchvision
+import numpy as np
 
 from torch import nn
 from einops import rearrange, repeat
@@ -15,6 +16,7 @@ from torchmetrics.functional import accuracy
 
 from model.transformer import TransformerEncoderLayer
 
+import pdb
 
 class MemClsLearner(LightningModule):
     def __init__(self, args, dm):
@@ -67,6 +69,9 @@ class MemClsLearner(LightningModule):
                 self.knnformer,
             )
 
+        if args.LT:
+            self.train_class_count = self._init_LT_setting()
+
     def _init_backbone(self):
         """ Init pretrained backbone """
         if 'resnet' in self.args.backbone:
@@ -103,6 +108,14 @@ class MemClsLearner(LightningModule):
         # moved to self.on_fit_start; should be called after params being loaded to cuda
         # nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
         return generic_tokens
+
+    def _init_LT_setting(self):
+        self.dm.setup(stage='init')
+        train_labels = np.array(self.dm.dataset_train.targets).astype(int)
+        train_class_count = []
+        for c in range(self.dm.num_classes):
+            train_class_count.append(len(train_labels[train_labels == c]))
+        return train_class_count
 
     def on_fit_start(self):
         with torch.no_grad():
@@ -286,6 +299,13 @@ class MemClsLearner(LightningModule):
         self.count_correct += (preds == y).int().sum()
         self.count_valimgs += int(y.shape[0])
 
+        if self.args.LT:
+            correct = (preds == y).int()
+
+            for ans, lbl in zip(correct.tolist(), y.tolist()):
+                self.count_class_correct[lbl] += ans
+                self.count_class_valimgs[lbl] += 1
+
         if stage:
             self.log(f"{stage}_loss", loss, prog_bar=True)
             self.log(f"{stage}_acc", acc, prog_bar=True)
@@ -295,6 +315,10 @@ class MemClsLearner(LightningModule):
         self.count_correct = 0
         self.count_valimgs = 0
 
+        if self.args.LT:
+            self.count_class_correct = [0 for c in range(self.dm.num_classes)]
+            self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
+
     def validation_step(self, batch, batch_idx):
         return self.evaluate(batch, "val")
 
@@ -302,13 +326,17 @@ class MemClsLearner(LightningModule):
         self.count_correct = 0
         self.count_valimgs = 0
 
+        if self.args.LT:
+            self.count_class_correct = [0 for c in range(self.dm.num_classes)]
+            self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
+
         with torch.no_grad():
             # torch.set_printoptions(precision=2, edgeitems=50, linewidth=240)
             diff = (self.old_generic_tokens - self.generic_tokens).abs()
-            print(diff.mean(), diff.mean().max())
-            print(diff)
-            print(self.generic_tokens)
-            print()
+            # print(diff.mean(), diff.mean().max())
+            # print(diff)
+            # print(self.generic_tokens)
+            # print()
             self.old_generic_tokens = self.generic_tokens.clone()
 
     def validation_epoch_end(self, outputs):
@@ -317,7 +345,28 @@ class MemClsLearner(LightningModule):
         epoch_loss = torch.stack(batch_losses).mean()  # a bit inaccurate; drop_last=False
         epoch_acc = self.count_correct / self.count_valimgs * 100.
 
-        print(f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}\n')
+        result = f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}'
+        if self.args.LT:
+            many_shot = []
+            medium_shot = []
+            few_shot = []
+
+            for c in range(self.dm.num_classes):
+                if self.train_class_count[c] > self.args.many_shot_thr:
+                    many_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
+                elif self.train_class_count[c] < self.args.low_shot_thr:
+                    few_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
+                else:
+                    medium_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
+
+            if len(many_shot) == 0: many_shot.append(0)
+            if len(medium_shot) == 0: medium_shot.append(0)
+            if len(few_shot) == 0: few_shot.append(0)
+
+            result += f" | val_many: {np.mean(many_shot)*100.:.2f} | val_medium: {np.mean(medium_shot)*100.:.2f} | val_few: {np.mean(few_shot)*100.:.2f}"
+
+        result = "\n\n\n" + result + "\n"
+        print(result)
 
     def test_step(self, batch, batch_idx):
         self.evaluate(batch, "test")

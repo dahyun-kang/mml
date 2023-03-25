@@ -10,7 +10,10 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from datamodule import return_datamodule
 from model.memclslearner import MemClsLearner
+
+from model.decoupled import Decoupled_learner
 from callbacks import CustomCheckpoint
+
 
 
 if __name__ == '__main__':
@@ -19,7 +22,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset root path')
     parser.add_argument('--dataset', type=str, default=None, help='Experiment dataset')
-    parser.add_argument('--backbone', type=str, default='resnet18', choices=['resnet18', 'resnet50', 'clipRN50', 'clipvitb'], help='Backbone; clip-trained model should have the keywoard \"clip\"')
+    parser.add_argument('--backbone', type=str, default='resnet18', help='Backbone; clip-trained model should have the keywoard \"clip\"')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
@@ -28,17 +31,27 @@ if __name__ == '__main__':
     parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
+    parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
+    parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
+    parser.add_argument('--Decoupled', action='store_true', help='Flag to run reproducing expriement of Decoupled Learning')
     parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
+
     args = parser.parse_args()
+
+    args.many_shot_thr = 100
+    args.low_shot_thr = 20
 
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
 
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
-    model = MemClsLearner(args, dm=dm)
-    if args.nakata22:
-        model.forward = model.forward_nakata22
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
+    if args.Decoupled:
+        model = Decoupled_learner(args, dm=dm)
+    else:
+        model = MemClsLearner(args, dm=dm)
+        if args.nakata22:
+            model.forward = model.forward_nakata22
 
     checkpoint_callback = CustomCheckpoint(args)
     trainer = Trainer(
