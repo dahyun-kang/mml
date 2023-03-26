@@ -1,13 +1,12 @@
-# memory classification
+# Memory classification
 
-## conda installation command
+## Conda installation command
 ```bash
 conda env create -f environment.yml --prefix $YOURPREFIX
 ```
 `$YOUPREFIX` is typically `/home/anaconda3`
 
-
-## training command
+## Training command for cifar10/cifar100/food101/places365/fgvcaircraft/stl10
 ```python
 python main.py \
     --datapath $YOURDATASETPATH \
@@ -16,4 +15,18 @@ python main.py \
     --logpath $YOURLOGPATH
 ```
 
-raise `--nowandb` for no wandb logging
+## Training command for imagenetLT/placesLT
+```python
+python main.py \
+    --datapath $YOURDATASETPATH \
+    --backbone {resnet18/resnet50/clipRN50/clipvitb} \
+    --dataset {imagenetLT/placesLT} \
+    --LT \
+    --sampler {Classaware/SquareRoot} \
+    --logpath $YOURLOGPATH
+```
+
+## Flags
+- Raise `--nowandb` for no wandb logging
+- Raise `--eval` for evaluating the best checkpoint of the corresponding `--logpath` experiment
+- Raise `--resume` for resume from the last checkpoint of the corresponding `--logpath` experiment
