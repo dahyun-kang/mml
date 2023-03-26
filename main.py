@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
     parser.add_argument('--k', type=int, default=10, help='K KNN')
     parser.add_argument('--ntokens', type=int, default=0, help='Number of tokens')
-    parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
+    parser.add_argument('--maxepochs', type=int, default=3000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
     parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
@@ -61,6 +61,7 @@ if __name__ == '__main__':
         logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
         num_sanity_val_steps=0,
+        resume_from_checkpoint=checkpoint_callback.lastmodelpath,
         # gradient_clip_val=5.0,
     )
 
