@@ -36,6 +36,7 @@ if __name__ == '__main__':
     parser.add_argument('--Decoupled', action='store_true', help='Flag to run reproducing expriement of Decoupled Learning')
     parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
+    parser.add_argument('--jobid', type=int, default=0, help='Slurm job ID')
 
     args = parser.parse_args()
 
