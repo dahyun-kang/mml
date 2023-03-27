@@ -478,4 +478,4 @@
         out = self.linear(out)
         sim = torch.einsum('b d, c d -> b c', out, self.global_proto)
 
-        return F.log_softmax(out, dim=1)
+        return F.log_softmax(sim, dim=1)
