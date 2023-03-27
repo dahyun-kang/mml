@@ -31,6 +31,7 @@ class MemClsLearner(LightningModule):
 
         self.memory_list = None
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
+        factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
         self.knnformer2 = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=self.nhead,
                                                  dim_feedforward=self.dim,
@@ -39,8 +40,7 @@ class MemClsLearner(LightningModule):
                                                  layer_norm_eps=1e-05,
                                                  batch_first=True,
                                                  norm_first=True,
-                                                 device=self.device,
-                                                 dtype=self.modeldtype,
+                                                 **factory_kwargs,
                                                  )
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=self.nhead,
@@ -50,15 +50,14 @@ class MemClsLearner(LightningModule):
                                                  layer_norm_eps=1e-05,
                                                  batch_first=True,
                                                  norm_first=True,
-                                                 device=self.device,
-                                                 dtype=self.modeldtype,
+                                                 **factory_kwargs,
                                                  )
         '''
         self.linear = nn.Sequential(
-                          # nn.Linear((1 + args.k) * self.dim, self.dim, dtype=self.modeldtype),
-                          nn.Linear(self.dim, self.dim, dtype=self.modeldtype),
+                          # nn.Linear((1 + args.k) * self.dim, self.dim, **factory_kwargs),
+                          nn.Linear(self.dim, self.dim, **factory_kwargs),
                           nn.ReLU(inplace=True),
-                          nn.Linear(self.dim, self.dim, dtype=self.modeldtype),
+                          nn.Linear(self.dim, self.dim, **factory_kwargs),
                       )
         '''
 
