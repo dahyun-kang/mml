@@ -147,7 +147,6 @@ class Decoupled_learner(LightningModule):
             momentum=0.9,
             weight_decay=5e-4,
         )
-        # lr_schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.args.maxepochs, eta_min=0.0)
+        lr_schedule = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.args.maxepochs, eta_min=0.0)
 
-        # return {"optimizer": optimizer, "lr_scheduler": lr_schedule}
-        return {"optimizer": optimizer}
+        return {"optimizer": optimizer, "lr_scheduler": lr_schedule}
