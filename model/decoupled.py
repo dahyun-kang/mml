@@ -65,7 +65,7 @@ class Decoupled_learner(LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         logits = self(x)
-        loss = nn.CrossEntropyLoss()(logits, y)
+        loss = F.cross_entropy(logits, y)
         self.log("train_loss", loss)
 
         return {'loss': loss}
@@ -73,7 +73,7 @@ class Decoupled_learner(LightningModule):
     def evaluate(self, batch, stage=None):
         x, y = batch
         logits = self(x)
-        loss = nn.CrossEntropyLoss()(logits, y)
+        loss = F.cross_entropy(logits, y)
         preds = torch.argmax(logits, dim=1)
         acc = accuracy(preds, y) * 100.
 
@@ -95,8 +95,8 @@ class Decoupled_learner(LightningModule):
         self.count_correct = 0
         self.count_valimgs = 0
 
-        self.count_class_correct = [0 for c in range(self.dm.num_classes)]
-        self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
+        self.count_class_correct = [0 for c in range(self.num_classes)]
+        self.count_class_valimgs = [0 for c in range(self.num_classes)]
 
     def validation_step(self, batch, batch_idx):
         return self.evaluate(batch, "val")
@@ -105,8 +105,8 @@ class Decoupled_learner(LightningModule):
         self.count_correct = 0
         self.count_valimgs = 0
 
-        self.count_class_correct = [0 for c in range(self.dm.num_classes)]
-        self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
+        self.count_class_correct = [0 for c in range(self.num_classes)]
+        self.count_class_valimgs = [0 for c in range(self.num_classes)]
 
     def validation_epoch_end(self, outputs):
         epoch = self.trainer.current_epoch
