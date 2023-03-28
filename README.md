@@ -26,6 +26,12 @@ python main.py \
     --logpath $YOURLOGPATH
 ```
 
+### Joing LT learning
+```python
+python main.py --datapath data --dataset imagenetLT --backbone resnext50 --lr 0.025 --maxepochs 90 --Decoupled --batchsize 64
+```
+
+
 ## Flags
 - Raise `--nowandb` for no wandb logging
 - Raise `--eval` for evaluating the best checkpoint of the corresponding `--logpath` experiment
