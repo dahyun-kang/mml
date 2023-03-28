@@ -109,15 +109,18 @@ class Transforms:
 
 
 class AbstractDataModule(LightningDataModule):
-    def __init__(self, datadir='data', imgsize=224, batchsize=256, num_workers=0, use_clip_transform=True, train_split=None, val_split=None, sampler=None):
+    def __init__(self, datadir='data', imgsize=224, batchsize=256, num_workers=0, transform_type=None, train_split=None, val_split=None, sampler=None):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = None
         self.dataset_train = self.dataset_val = None
         self.sampler = None
-        if use_clip_transform:
+        if transform_type == 'CLIP':
             self.train_transform = Transforms.clip_transform(imgsize)
             self.val_transform = Transforms.clip_transform(imgsize)
+        elif transform_type == 'LT':
+            self.train_transform = Transforms.LT_train_transform(imgsize)
+            self.val_transform = Transforms.LT_val_transform(imgsize)
         else:
             self.train_transform = Transforms.train_transform(imgsize)
             self.val_transform = Transforms.val_transform(imgsize)
@@ -346,13 +349,13 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'placesLT': Places_LT_DataModule
                     }
 
-    use_clip_transform = True if 'clip' in backbone and not 'LT' in dataset else False
+    transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
     datamodule = dataset_dict[dataset](
         datadir=datapath,
         imgsize=224,
         batchsize=batchsize,
         num_workers=8,
-        use_clip_transform=use_clip_transform,
+        transform_type=transform_type,
         sampler=sampler
     )
 
