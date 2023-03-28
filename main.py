@@ -42,6 +42,7 @@ if __name__ == '__main__':
 
     args.many_shot_thr = 100
     args.low_shot_thr = 20
+    args.resume = True if args.Decoupled in ['cRT', 'tau'] else args.resume
 
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
