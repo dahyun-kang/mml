@@ -77,7 +77,10 @@ if __name__ == '__main__':
     else:
         if args.eval:
             modelpath = checkpoint_callback.modelpath
-            model = MemClsLearner.load_from_checkpoint(modelpath, args=args, dm=dm)
+            # temporary fix for get test accuracy
+            # It need more general structure for nicer code
+            learner = Decoupled_learner if args.Decoupled else MemClsLearner
+            model = learner.load_from_checkpoint(modelpath, args=args, dm=dm)
             trainer.test(model=model, datamodule=dm)
         else:
             trainer.fit(model, dm)
