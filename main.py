@@ -33,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
     parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
     parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
-    parser.add_argument('--Decoupled', action='store_true', help='Flag to run reproducing expriement of Decoupled Learning')
+    parser.add_argument('--Decoupled', type=str, default=None, choices=['joint', 'cRT', 'tau'], help='Flag to run reproducing expriement of Decoupled Learning')
     parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
     parser.add_argument('--jobid', type=int, default=0, help='Slurm job ID')
@@ -46,15 +46,19 @@ if __name__ == '__main__':
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
 
+    checkpoint_callback = CustomCheckpoint(args)
     dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
     if args.Decoupled:
-        model = Decoupled_learner(args, dm=dm)
+        if args.Decoupled == 'Joint':
+            model = Decoupled_learner(args, dm=dm)
+        else:
+            modelpath = checkpoint_callback.modelpath
+            model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
     else:
         model = MemClsLearner(args, dm=dm)
         if args.nakata22:
             model.forward = model.forward_nakata22
 
-    checkpoint_callback = CustomCheckpoint(args)
     trainer = Trainer(
         max_epochs=args.maxepochs,
         accelerator="auto",

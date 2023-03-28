@@ -47,6 +47,8 @@ class Decoupled_learner(LightningModule):
             model, preprocess = clip.load("RN50")
             model.forward = model.encode_image
 
+        if self.args.Decoupled != 'joint':
+            model.requires_grad_(requires_grad=False)
         return model
 
     def _init_LT_setting(self):
@@ -63,6 +65,8 @@ class Decoupled_learner(LightningModule):
         return out
 
     def training_step(self, batch, batch_idx):
+        if self.args.Decoupled != 'joint':
+            self.backbone.eval()
         x, y = batch
         logits = self(x)
         loss = F.cross_entropy(logits, y)
