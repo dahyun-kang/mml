@@ -42,45 +42,68 @@ if __name__ == '__main__':
 
     args.many_shot_thr = 100
     args.low_shot_thr = 20
-    args.resume = True if args.Decoupled in ['cRT', 'tau'] else args.resume
 
     if args.dataset == 'places365':
         args.datapath = os.path.join(args.datapath, 'places365')
 
-    checkpoint_callback = CustomCheckpoint(args)
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
+    # Only for reproducing experiment of paper
+    # Kang, B., Xie, S., Rohrbach, M., Yan, Z., Gordo, A., Feng, J., Kalantidis, Y.: Decoupling representation and classifier for long-tailed recognition. In: Proc. Int. Conf. Learn. Representations (2019)
     if args.Decoupled:
+        args.resume = True if args.Decoupled in ['cRT', 'tau'] else args.resume
+
+        checkpoint_callback = CustomCheckpoint(args)
+        dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
+
         if args.Decoupled == 'Joint':
             model = Decoupled_learner(args, dm=dm)
         else:
             modelpath = checkpoint_callback.modelpath
             model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
+
+        trainer = Trainer(
+            max_epochs=args.maxepochs,
+            accelerator="auto",
+            devices=1 if torch.cuda.is_available() else None,
+            logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
+            callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
+            num_sanity_val_steps=0,
+            resume_from_checkpoint=checkpoint_callback.lastmodelpath,
+            # gradient_clip_val=5.0,
+        )
+
+        if args.eval:
+            modelpath = checkpoint_callback.modelpath
+            model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
+            trainer.test(model=model, datamodule=dm)
+        else:
+            trainer.fit(model, dm)
+
     else:
+        checkpoint_callback = CustomCheckpoint(args)
+        dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
         model = MemClsLearner(args, dm=dm)
+
         if args.nakata22:
             model.forward = model.forward_nakata22
 
-    trainer = Trainer(
-        max_epochs=args.maxepochs,
-        accelerator="auto",
-        devices=1 if torch.cuda.is_available() else None,
-        logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
-        callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
-        num_sanity_val_steps=0,
-        resume_from_checkpoint=checkpoint_callback.lastmodelpath,
-        # gradient_clip_val=5.0,
-    )
+        trainer = Trainer(
+            max_epochs=args.maxepochs,
+            accelerator="auto",
+            devices=1 if torch.cuda.is_available() else None,
+            logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
+            callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
+            num_sanity_val_steps=0,
+            resume_from_checkpoint=checkpoint_callback.lastmodelpath,
+            # gradient_clip_val=5.0,
+        )
 
-    if args.nakata22:
-        # non-differentiable majority voting method, Nakata et al., ECCV 2022
-        trainer.test(model, datamodule=dm)
-    else:
+        if args.nakata22:
+            # non-differentiable majority voting method, Nakata et al., ECCV 2022
+            trainer.test(model, datamodule=dm)
+
         if args.eval:
             modelpath = checkpoint_callback.modelpath
-            # temporary fix for get test accuracy
-            # It need more general structure for nicer code
-            learner = Decoupled_learner if args.Decoupled else MemClsLearner
-            model = learner.load_from_checkpoint(modelpath, args=args, dm=dm)
+            model = MemClsLearner.load_from_checkpoint(modelpath, args=args, dm=dm)
             trainer.test(model=model, datamodule=dm)
         else:
             trainer.fit(model, dm)
