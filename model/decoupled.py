@@ -112,6 +112,25 @@ class Decoupled_learner(LightningModule):
         self.count_class_correct = [0 for c in range(self.num_classes)]
         self.count_class_valimgs = [0 for c in range(self.num_classes)]
 
+    def shot_caculater(self, phase='val'):
+        many_shot = []
+        medium_shot = []
+        few_shot = []
+
+        for c in range(self.dm.num_classes):
+            if self.train_class_count[c] > self.args.many_shot_thr:
+                many_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
+            elif self.train_class_count[c] < self.args.low_shot_thr:
+                few_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
+            else:
+                medium_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
+
+        if len(many_shot) == 0: many_shot.append(0)
+        if len(medium_shot) == 0: medium_shot.append(0)
+        if len(few_shot) == 0: few_shot.append(0)
+
+        return f" | {phase}_many: {np.mean(many_shot)*100.:.2f} | {phase}_medium: {np.mean(medium_shot)*100.:.2f} | {phase}_few: {np.mean(few_shot)*100.:.2f}"
+
     def validation_epoch_end(self, outputs):
         epoch = self.trainer.current_epoch
         batch_losses = [x["val_loss"] for x in outputs]
@@ -119,25 +138,7 @@ class Decoupled_learner(LightningModule):
         epoch_acc = self.count_correct / self.count_valimgs * 100.
 
         result = f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}'
-
-        many_shot = []
-        medium_shot = []
-        few_shot = []
-
-        for c in range(self.dm.num_classes):
-            if self.train_class_count[c] > self.args.many_shot_thr:
-                many_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-            elif self.train_class_count[c] < self.args.low_shot_thr:
-                few_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-            else:
-                medium_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-
-        if len(many_shot) == 0: many_shot.append(0)
-        if len(medium_shot) == 0: medium_shot.append(0)
-        if len(few_shot) == 0: few_shot.append(0)
-
-        result += f" | val_many: {np.mean(many_shot)*100.:.2f} | val_medium: {np.mean(medium_shot)*100.:.2f} | val_few: {np.mean(few_shot)*100.:.2f}"
-
+        result += self.shot_caculater(phase='val')
         result = "\n\n\n" + result + "\n"
         print(result)
 
@@ -145,25 +146,7 @@ class Decoupled_learner(LightningModule):
         epoch_acc = self.count_correct / self.count_valimgs * 100.
 
         result = f'test_acc: {epoch_acc:.2f}'
-
-        many_shot = []
-        medium_shot = []
-        few_shot = []
-
-        for c in range(self.dm.num_classes):
-            if self.train_class_count[c] > self.args.many_shot_thr:
-                many_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-            elif self.train_class_count[c] < self.args.low_shot_thr:
-                few_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-            else:
-                medium_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-
-        if len(many_shot) == 0: many_shot.append(0)
-        if len(medium_shot) == 0: medium_shot.append(0)
-        if len(few_shot) == 0: few_shot.append(0)
-
-        result += f" | test_many: {np.mean(many_shot)*100.:.2f} | test_medium: {np.mean(medium_shot)*100.:.2f} | test_few: {np.mean(few_shot)*100.:.2f}"
-
+        result += self.shot_caculater(phase='test')
         result = "\n\n\n" + result + "\n"
         print(result)
 
