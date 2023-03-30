@@ -58,6 +58,9 @@ if __name__ == '__main__':
             modelpath = checkpoint_callback.modelpath
             model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
 
+        if args.Decoupled == 'tau':
+            print(model.classifier)
+
         trainer = Trainer(
             max_epochs=args.maxepochs,
             accelerator="auto",
@@ -76,6 +79,7 @@ if __name__ == '__main__':
         elif args.Decoupled == 'feat_extract':
             phases = [['test', dm.test_dataloader()], ['val', dm.val_dataloader()], ['train', dm.unshuffled_train_dataloader()]]
             for phase in phases:
+                print(f"\nFeature(backbone) extract from {phase[0]} dataloader")
                 model.feat_extract_phase = phase[0]
                 trainer.test(model=model, dataloaders=phase[1])
         else:
