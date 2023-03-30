@@ -9,7 +9,7 @@ class CustomCheckpoint(ModelCheckpoint):
     def __init__(self, args):
         self.dirpath = os.path.join('logs', args.dataset, args.backbone, args.logpath)
 
-        if not args.eval and not args.resume:
+        if not args.eval and not args.resume and args.Decoupled not in ['cRT', 'tau', 'feat_extract']:
             assert not os.path.exists(self.dirpath), f'{self.dirpath} already exists'
         self.filename = 'best_model'
         self.monitor = 'val_acc'
