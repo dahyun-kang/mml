@@ -117,7 +117,7 @@ class Decoupled_learner(LightningModule):
         medium_shot = []
         few_shot = []
 
-        for c in range(self.dm.num_classes):
+        for c in range(self.num_classes):
             if self.train_class_count[c] > self.args.many_shot_thr:
                 many_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
             elif self.train_class_count[c] < self.args.low_shot_thr:
