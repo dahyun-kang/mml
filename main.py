@@ -49,8 +49,6 @@ if __name__ == '__main__':
     # Only for reproducing experiment of paper
     # Kang, B., Xie, S., Rohrbach, M., Yan, Z., Gordo, A., Feng, J., Kalantidis, Y.: Decoupling representation and classifier for long-tailed recognition. In: Proc. Int. Conf. Learn. Representations (2019)
     if args.Decoupled:
-        # args.resume = True if args.Decoupled in ['cRT', 'tau'] else args.resume
-
         checkpoint_callback = CustomCheckpoint(args)
         dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
 
@@ -76,8 +74,9 @@ if __name__ == '__main__':
             model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
             trainer.test(model=model, datamodule=dm)
         elif args.Decoupled == 'feat_extract':
-            phases = [['test', dm.test_dataloader()], ['val', dm.val_dataloader()], ['train', dm.train_dataloader()]]
+            phases = [['test', dm.test_dataloader()], ['val', dm.val_dataloader()], ['train', dm.unshuffled_train_dataloader()]]
             for phase in phases:
+                model.feat_extract_phase = phase[0]
                 trainer.test(model=model, dataloaders=phase[1])
         else:
             trainer.fit(model, dm)

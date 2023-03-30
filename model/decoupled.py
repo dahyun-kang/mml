@@ -1,5 +1,7 @@
 import math
 import clip
+import os
+import pickle
 from tqdm import tqdm
 
 import torch
@@ -25,6 +27,7 @@ class Decoupled_learner(LightningModule):
         self.num_classes = dm.num_classes
         self.backbone = self._init_backbone()
         self.dim = 2048
+        self.feat_extract_phase = None # only for feat_extract
 
         self.classifier = nn.Linear(self.dim, self.num_classes)
 
@@ -81,6 +84,11 @@ class Decoupled_learner(LightningModule):
         preds = torch.argmax(logits, dim=1)
         acc = accuracy(preds, y) * 100.
 
+        if self.args.Decoupled == 'feat_extract':
+            features = self.backbone(x)
+            self.feats_all.append(features.cpu().numpy())
+            self.labels_all.append(y.cpu().numpy())
+
         self.count_correct += (preds == y).int().sum()
         self.count_valimgs += int(y.shape[0])
 
@@ -101,6 +109,10 @@ class Decoupled_learner(LightningModule):
 
         self.count_class_correct = [0 for c in range(self.num_classes)]
         self.count_class_valimgs = [0 for c in range(self.num_classes)]
+
+        if self.args.Decoupled == 'feat_extract':
+            self.feats_all = []
+            self.labels_all = []
 
     def validation_step(self, batch, batch_idx):
         return self.evaluate(batch, "val")
@@ -149,6 +161,19 @@ class Decoupled_learner(LightningModule):
         result += self.shot_caculater(phase='test')
         result = "\n\n\n" + result + "\n"
         print(result)
+
+        if self.args.Decoupled == 'feat_extract':
+            name = f'{self.feat_extract_phase}feat_all.pkl'
+            dirpath = os.path.join('logs', self.args.dataset, self.args.backbone, self.args.logpath)
+            fname = os.path.join(dirpath, name)
+
+            print(f'===> Saving {self.feat_extract_phase}feats to ' + fname)
+            with open(fname, 'wb') as f:
+                pickle.dump({
+                             'feats': np.concatenate(self.feats_all),
+                             'labels': np.concatenate(self.labels_all),
+                            },
+                            f, protocol=4) 
 
     def test_step(self, batch, batch_idx):
         self.evaluate(batch, "test")
