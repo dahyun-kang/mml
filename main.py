@@ -2,6 +2,7 @@
 import os
 import argparse
 import torch
+import numpy as np
 
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor
@@ -10,8 +11,8 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from datamodule import return_datamodule
 from model.memclslearner import MemClsLearner
-
 from model.decoupled import Decoupled_learner
+from model.tau_normalize import tau_normalizer
 from callbacks import CustomCheckpoint
 
 
@@ -59,31 +60,39 @@ if __name__ == '__main__':
             model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
 
         if args.Decoupled == 'tau':
-            print(model.classifier)
+            dirpath = os.path.join('logs', args.dataset, args.backbone, args.logpath)
+            train_file  = 'trainfeat_all.pkl'
+            test_files   = ['valfeat_all.pkl', 'testfeat_all.pkl']
 
-        trainer = Trainer(
-            max_epochs=args.maxepochs,
-            accelerator="auto",
-            devices=1 if torch.cuda.is_available() else None,
-            logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
-            callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
-            num_sanity_val_steps=0,
-            resume_from_checkpoint=checkpoint_callback.lastmodelpath,
-            # gradient_clip_val=5.0,
-        )
+            for test_file in test_files:
+                tau_trainer = tau_normalizer(args, model, dirpath, train_file, test_file)
+                for tau in np.linspace(0,2,21):
+                    tau_trainer.test(tau)
 
-        if args.eval:
-            modelpath = checkpoint_callback.modelpath
-            model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
-            trainer.test(model=model, datamodule=dm)
-        elif args.Decoupled == 'feat_extract':
-            phases = [['test', dm.test_dataloader()], ['val', dm.val_dataloader()], ['train', dm.unshuffled_train_dataloader()]]
-            for phase in phases:
-                print(f"\nFeature(backbone) extract from {phase[0]} dataloader")
-                model.feat_extract_phase = phase[0]
-                trainer.test(model=model, dataloaders=phase[1])
         else:
-            trainer.fit(model, dm)
+            trainer = Trainer(
+                max_epochs=args.maxepochs,
+                accelerator="auto",
+                devices=1 if torch.cuda.is_available() else None,
+                logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'qamr-{args.dataset}-{args.backbone}'),
+                callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
+                num_sanity_val_steps=0,
+                resume_from_checkpoint=checkpoint_callback.lastmodelpath,
+                # gradient_clip_val=5.0,
+            )
+
+            if args.eval:
+                modelpath = checkpoint_callback.modelpath
+                model = Decoupled_learner.load_from_checkpoint(modelpath, args=args, dm=dm)
+                trainer.test(model=model, datamodule=dm)
+            elif args.Decoupled == 'feat_extract':
+                phases = [['test', dm.test_dataloader()], ['val', dm.val_dataloader()], ['train', dm.unshuffled_train_dataloader()]]
+                for phase in phases:
+                    print(f"\nFeature(backbone) extract from {phase[0]} dataloader")
+                    model.feat_extract_phase = phase[0]
+                    trainer.test(model=model, dataloaders=phase[1])
+            else:
+                trainer.fit(model, dm)
 
     else:
         checkpoint_callback = CustomCheckpoint(args)
