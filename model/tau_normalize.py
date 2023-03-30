@@ -77,27 +77,34 @@ class tau_normalizer():
         if len(medium_shot) == 0: medium_shot.append(0)
         if len(few_shot) == 0: few_shot.append(0)
 
-        result = f"all: {top1_all*100:.2f} | many: {np.mean(many_shot)*100.:.2f} | medium: {np.mean(medium_shot)*100.:.2f} | few: {np.mean(few_shot)*100.:.2f}"
-        return result
+        top1_acc = top1_all*100.
+        many_acc = np.mean(many_shot)*100.
+        medium_acc = np.mean(medium_shot)*100.
+        few_acc = np.mean(few_shot)*100.
+
+        result = f"all: {top1_acc:.2f} | many: {many_acc:.2f} | medium: {medium_acc:.2f} | few: {few_acc:.2f}"
+        return result, top1_acc, many_acc, medium_acc, few_acc
         
     def forward(self, weights):
         total_logits = []
-        for i in range(self.testsize // self.args.batch_size + 1):
+        for i in range(self.testsize // self.args.batchsize + 1):
             # if i%10 == 0:
             #     print('{}/{}'.format(i, testsize // batch_size + 1))
-            feat = self.testset['feats'][self.args.batch_size*i:min(self.args.batch_size*(i+1), self.testsize)]
+            feat = self.testset['feats'][self.args.batchsize*i:min(self.args.batchsize*(i+1), self.testsize)]
             feat = torch.Tensor(feat)
 
-            logits = self.dotproduct_similarity(feat, weights)
+            logits = dotproduct_similarity(feat, weights)
             total_logits.append(logits)
 
         total_logits = torch.cat(total_logits)
         return total_logits
     
-    def test(self, tau):
-        ws = self.taunorm(self.weight, tau)
+    def test(self, tau, log=True):
+        ws = taunorm(self.weight, tau)
         logits = self.forward(ws)
-        preds = self.logits2preds(logits, self.c_labels)
-        result = self.preds2accs(preds)
+        preds = logits2preds(logits, self.c_labels)
+        result, top1, many, medium, few = self.preds2accs(preds)
 
-        print(f'tau: {tau:.2f} | ' + result)
+        if log:
+            print(f'tau: {tau:.3f} | ' + result)
+        return [top1, many, medium, few]

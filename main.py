@@ -65,9 +65,21 @@ if __name__ == '__main__':
             test_files   = ['valfeat_all.pkl', 'testfeat_all.pkl']
 
             for test_file in test_files:
+                print(f'tau_normalize result of {test_file}')
                 tau_trainer = tau_normalizer(args, model, dirpath, train_file, test_file)
-                for tau in np.linspace(0,2,21):
-                    tau_trainer.test(tau)
+                log = []
+                for tau in np.linspace(0,2,2001):
+                    result = tau_trainer.test(tau, log=False)
+                    log.append([tau]+result)
+
+                log = np.array(log)
+                maxidx = np.argmax(log, axis=0)
+                
+                stages = ['top1', 'many', 'medium', 'few']
+                for idx, stage in zip(maxidx[1:], stages):
+                    print(f'Tau for Top {stage}_acc \t| tau: {log[idx][0]:.3f} | all: {log[idx][1]:.2f} | many: {log[idx][2]:.2f} | medium: {log[idx][3]:.2f} | few: {log[idx][4]:.2f}')
+                
+
 
         else:
             trainer = Trainer(
