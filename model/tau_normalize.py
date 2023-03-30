@@ -3,6 +3,21 @@ import pickle
 import numpy as np
 import torch
 
+def taunorm(weights, tau):
+    normB = torch.norm(weights, 2, 1)
+    ws = weights.clone()
+    for i in range(weights.size(0)):
+        ws[i] = ws[i] / torch.pow(normB[i], tau)
+    return ws
+    
+def dotproduct_similarity(A, B):
+    AB = torch.mm(A, B.t())
+    return AB
+
+def logits2preds(logits, labels):
+    _, nns = logits.max(dim=1)
+    preds = np.array([labels[i] for i in nns])
+    return preds
 class tau_normalizer():
     def __init__(self, args, model, root, train_feat_path, test_feat_path):
         self.args = args
@@ -27,26 +42,6 @@ class tau_normalizer():
         for i in np.unique(self.trainset['labels']):
             c_labels.append(i)
         self.c_labels = np.array(c_labels)
-
-    def taunorm(weights, tau):
-        normB = torch.norm(weights, 2, 1)
-        ws = weights.clone()
-        for i in range(weights.size(0)):
-            ws[i] = ws[i] / torch.pow(normB[i], tau)
-        return ws
-        
-    def dotproduct_similarity(A, B):
-        AB = torch.mm(A, B.t())
-        return AB
-    
-    def logits2preds(logits, labels):
-        _, nns = logits.max(dim=1)
-        preds = np.array([labels[i] for i in nns])
-        return preds
-    
-    def mic_acc_cal(preds, labels):
-        acc_mic_top1 = (preds == labels).sum().item() / len(labels)
-        return acc_mic_top1
 
     def preds2accs(self, preds):
         testlabel = self.testset['labels']
