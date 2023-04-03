@@ -305,6 +305,10 @@ class ImageNet_LT_DataModule(AbstractDataModule):
 
         self.dataset_train = self.dataset(root=root, txt=os.path.join(txt, 'ImageNet_LT_train.txt'), transform=self.train_transform)
         self.dataset_val = self.dataset(root=root, txt=os.path.join(txt, 'ImageNet_LT_val.txt'), transform=self.val_transform)
+        self.dataset_test = self.dataset(root=root, txt=os.path.join(txt, 'ImageNet_LT_test.txt'), transform=self.val_transform)
+
+    def test_dataloader(self):
+        return DataLoader(self.dataset_test, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     @property
     def num_classes(self) -> int:
@@ -322,6 +326,10 @@ class Places_LT_DataModule(AbstractDataModule):
 
         self.dataset_train = self.dataset(root=root, txt=os.path.join(txt, 'Places_LT_train.txt'), transform=self.train_transform)
         self.dataset_val = self.dataset(root=root, txt=os.path.join(txt, 'Places_LT_val.txt'), transform=self.val_transform)
+        self.dataset_test = self.dataset(root=root, txt=os.path.join(txt, 'Places_LT_test.txt'), transform=self.val_transform)
+
+    def test_dataloader(self):
+        return DataLoader(self.dataset_test, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     @property
     def num_classes(self) -> int:
