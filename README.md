@@ -26,9 +26,22 @@ python main.py \
     --logpath $YOURLOGPATH
 ```
 
-### Joing LT learning
+## Reproduce Experiments
+### Joint learning
 ```python
-python main.py --datapath data --dataset imagenetLT --backbone resnext50 --lr 0.025 --maxepochs 90 --Decoupled --batchsize 64
+python main.py --datapath data --dataset imagenetLT --backbone resnext50 --lr 0.025 --maxepochs 90 --Decoupled joint --batchsize 64
+```
+### cRT learning
+```python
+python main.py --datapath data --dataset imagenetLT --backbone resnext50 --lr 0.025 --maxepochs 100 --Decoupled cRT --batchsize 64 --sampler ClassAware
+```
+### feat_extract (Do before tau-normalize)
+```python
+python main.py --datapath data --dataset imagenetLT --backbone resnext50 --Decoupled feat_extract --nowandb --batchsize 64
+```
+### tau-normalize
+```python
+python main.py --datapath data --dataset imagenetLT --backbone resnext50 --Decoupled tau --nowandb
 ```
 
 
