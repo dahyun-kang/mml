@@ -116,11 +116,21 @@ class MemClsLearner(LightningModule):
             train_class_count.append(len(train_labels[train_labels == c]))
         return train_class_count
 
-    def on_fit_start(self):
+    def _init_memory_and_prototype(self):
         with torch.no_grad():
-            self.memory_list = self._init_memory_list()
+            if self.memory_list == None:
+                # self.memory_list = self._init_regular_memory_list()
+                self.memory_list, self.label_list = self._init_irregular_memory_list()
 
+            '''  # iregular
             self.global_proto = self.memory_list.mean(dim=1)
+            self.global_proto = self.global_proto.detach()
+            self.global_proto.requires_grad = False
+            '''
+
+            # irregular
+            global_proto_list = [feat_c.mean(dim=0) for feat_c in self.memory_list]
+            self.global_proto = torch.stack(global_proto_list, dim=0)
             self.global_proto = self.global_proto.detach()
             self.global_proto.requires_grad = False
 
@@ -130,25 +140,53 @@ class MemClsLearner(LightningModule):
 
             # self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
 
-            self.generic_tokens = nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
-            self.old_generic_tokens = self.generic_tokens.clone()
+    def on_fit_start(self):
+        self._init_memory_and_prototype()
+
+        self.generic_tokens = nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
+        self.old_generic_tokens = self.generic_tokens.clone()
 
     def on_test_start(self):
-        if self.memory_list == None:
-            self.memory_list = self._init_memory_list()
+        self._init_memory_and_prototype()
 
-        self.global_proto = self.memory_list.mean(dim=1)
-        self.global_proto = self.global_proto.detach()
-        self.global_proto.requires_grad = False
+    def _init_irregular_memory_list(self):
+        '''
+        Return an irregular memory list of image features with different number for each class
+        '''
+        train_loader = self.dm.unshuffled_train_dataloader()
+        backbone = self.backbone.to(self.device)
+        backbone.eval()
+        memory_list = [None] * self.num_classes
+        label_list = []
 
-    def _init_memory_list(self):
+        with torch.inference_mode():
+            for x, y in tqdm(train_loader):
+                x = x.to(self.device)
+                out = backbone(x)
+                for out_i, y_i in zip(out, y):
+                    out_i = out_i.unsqueeze(0)
+                    if memory_list[y_i] is None:
+                        memory_list[y_i] = [out_i]
+                    else:
+                        memory_list[y_i].append(out_i)
+
+        for c in range(self.num_classes):
+            memory_list[c] = torch.cat(memory_list[c], dim=0).detach()
+            memory_list[c].requires_grad = False
+            label_list += [c] * len(memory_list[c])
+        label_list = torch.tensor(label_list)
+        return memory_list, label_list
+
+    def _init_regular_memory_list(self):
+        '''
+        Return a regular memory list of image features with the same number for each class (max_num_samples)
+        '''
         train_loader = self.dm.unshuffled_train_dataloader()
         max_num_samples = self.dm.max_num_samples
 
         backbone = self.backbone.to(self.device)
         backbone.eval()
         memory_list = [None] * self.num_classes
-        count = 0
 
         with torch.inference_mode():
             for x, y in tqdm(train_loader):
@@ -175,7 +213,7 @@ class MemClsLearner(LightningModule):
 
         return memory_list
 
-    def forward_m8_1(self, x):
+    def forward_m8_1(self, x, y):
         '''
         <m8.1>
         parellel transformers with global (class-agnostic) kNN
@@ -189,6 +227,10 @@ class MemClsLearner(LightningModule):
         batchsize = out.shape[0]
 
         with torch.no_grad():
+            # irregular memory
+            if isinstance(self.memory_list, list):
+                self.memory_list = torch.cat(self.memory_list, dim=0)
+            # regular but 3-dimensional memory
             if len(self.memory_list.shape) == 3:
                 self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
 
@@ -208,60 +250,57 @@ class MemClsLearner(LightningModule):
             # (B, 1, D), (B, K, D) -> B, (1 + K), D
             tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
 
-        qout = self.knnformer(tr_q, tr_q, tr_q)
+        qout = self.linear(out)
         nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
 
-        qout = torch.einsum('b d, c d -> b c', qout[:, 0], self.global_proto)
+        qout = torch.einsum('b d, c d -> b c', qout, self.global_proto)
         nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
 
         avgprob = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
-        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
+        avgprob += 1e-6  # to prevent numerical unstability
         return torch.log(avgprob)
 
-    def forward_m8_4(self, x):
+    def forward_m8_1_1(self, x, y):
         '''
-        <m8.4>
-        parellel transformers with class-wise kNN
-
-        - parallel input update (knnformer1, knnformer2)
+        <m8.1.1 -> m29>
+        parellel transformers with global (class-agnostic) kNN + text emb
+        - parallel input update (linear, knnformer2)
         - avg probs
         - no l2normalization
+        - concat text embedding
         '''
-
         out = self.backbone(x)
         batchsize = out.shape[0]
-
         with torch.no_grad():
-            classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+            # irregular memory
+            if isinstance(self.memory_list, list):
+                self.memory_list = torch.cat(self.memory_list, dim=0)
+            # regular but 3-dimensional memory
+            if len(self.memory_list.shape) == 3:
+                self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
+            classwise_sim = torch.einsum('b d, n d -> b n', out, self.memory_list)
             if self.training:  # to ignore self-voting
                 # B, C, N -> B, C, K
                 topk_sim, indices = classwise_sim.topk(k=self.args.k + 1, dim=-1, largest=True, sorted=True)
-                top1_sim = topk_sim[:, :, 0]
-                max_class_indices = top1_sim.argmax(dim=1)  # highly likely the self (or another twin in the feature space)
-                indices[range(batchsize), max_class_indices, :-1] = indices[range(batchsize), max_class_indices, 1:]
-                indices = indices[:, :, :-1]
+                indices = indices[:, 1:]
             else:
                 topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
-
-            # 1, C, 1
-            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
-            # C, N, D [[1, C, 1], [B, C, K]] -> B, C, K, D
-            knnemb = self.memory_list[class_idx, indices]
-            knnemb = rearrange(knnemb, 'b c k d -> b (c k) d')
-            # corresponding_proto = self.global_proto[class_ids]  # self.global_proto_learned(class_ids)
-
+            # N, D [[B, K] -> B, K, D
+            knnemb = self.memory_list[indices]
             # B, 1, D
             tr_q = out.unsqueeze(1)
-            # (B, 1, D), (B, C, D) -> B, (1 + C), D
-            tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
-
-        qout = self.knnformer(tr_q, tr_q, tr_q)
+            # text emb
+            # N [[B, K] -> B, K
+            knnclass = self.label_list[indices]
+            knnemb = torch.cat([knnemb, self.textlabel_list[knnclass]], dim=-1)
+            # (B, 1, D), (B, K, D) -> B, (1 + K), D
+            tr_knn_cat = torch.cat([tr_q.repeat(1, 1, 2), knnemb], dim=1)
+        qout = self.linear(out)
+        # text emb
+        tr_knn_cat = self.knnencoder(tr_knn_cat)
         nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
-
-        qout = torch.einsum('b d, c d -> b c', qout[:, 0], self.global_proto)
+        qout = torch.einsum('b d, c d -> b c', qout, self.global_proto)
         nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
-
-        # return torch.log(0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1)))
         avgprob = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
         avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
         return torch.log(avgprob)
@@ -269,10 +308,16 @@ class MemClsLearner(LightningModule):
     def training_step(self, batch, batch_idx):
         self.backbone.eval()
         x, y = batch
-        logits = self(x)
+        logits = self(x, y)
+        '''
+        qout, nout = logits
+        avgprob = 0.5 * (F.softmax(qout + torch.log(self.base_prob.to(qout.device)), dim=1) + F.softmax(nout + torch.log(self.base_prob.to(nout.device)), dim=1))
+        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
+        loss = F.cross_entropy(avgprob, y)
+        # loss = F.cross_entropy(logits + torch.log(self.base_prob.to(logits.device)), y)
+        '''
         loss = F.nll_loss(logits, y)
         self.log("train_loss", loss)
-
         return {'loss': loss}
 
     '''
@@ -290,7 +335,15 @@ class MemClsLearner(LightningModule):
 
     def evaluate(self, batch, stage=None):
         x, y = batch
-        logits = self(x)
+        logits = self(x, y)
+        '''
+        qout, nout = logits
+        logits = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
+        avgprob = 0.5 * (F.softmax(qout + torch.log(self.base_prob.to(logits.device)), dim=1) + F.softmax(nout + torch.log(self.base_prob.to(logits.device)), dim=1))
+        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
+        loss = F.cross_entropy(avgprob, y)
+        # loss = F.cross_entropy(logits + torch.log(self.base_prob.to(logits.device)), y)
+        '''
         loss = F.nll_loss(logits, y)
         preds = torch.argmax(logits, dim=1)
         acc = accuracy(preds, y) * 100.
