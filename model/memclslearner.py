@@ -1,6 +1,5 @@
 """ Memory-based Classification Learner """
 
-import math
 import clip
 from tqdm import tqdm
 
@@ -17,6 +16,7 @@ from torchmetrics.functional import accuracy
 from model.transformer import TransformerEncoderLayer
 
 import pdb
+
 
 class MemClsLearner(LightningModule):
     def __init__(self, args, dm):
@@ -69,8 +69,7 @@ class MemClsLearner(LightningModule):
                 self.knnformer,
             )
 
-        if args.LT:
-            self.train_class_count = self._init_LT_setting()
+        self.train_class_count = self._count_class_samples()
 
     def _init_backbone(self):
         """ Init pretrained backbone """
@@ -109,7 +108,7 @@ class MemClsLearner(LightningModule):
         # nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
         return generic_tokens
 
-    def _init_LT_setting(self):
+    def _count_class_samples(self):
         self.dm.setup(stage='init')
         train_labels = np.array(self.dm.dataset_train.targets).astype(int)
         train_class_count = []
