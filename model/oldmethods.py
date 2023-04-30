@@ -21,7 +21,7 @@
 
         return F.log_softmax(out, dim=1)
 
-    def forward_nakata22(self, x):
+    def forward_nakata22(self, x, y):
         out = self.backbone(x)
 
         def majority_vote(input):
@@ -42,15 +42,17 @@
             return result.to(self.device)
 
         with torch.no_grad():
-            num_samples = self.memory_list.shape[1]
-            all_features = self.memory_list.view([-1, self.memory_list.shape[2]])
+            # num_samples = self.memory_list.shape[1]
+            # all_features = self.memory_list.view([-1, self.memory_list.shape[2]])
+            all_features = torch.cat(self.memory_list, dim=0)
 
             similarity_mat = torch.einsum('b d, n d -> b n', F.normalize(out, dim=-1), F.normalize(all_features, dim=-1))
 
             topk_sim, indices = similarity_mat.topk(k=self.args.k, dim=-1, largest=True, sorted=False)
 
-            indices = torch.div(indices, num_samples, rounding_mode='trunc')
-            voting_result = torch.stack(list(map(majority_vote, indices)))
+            # indices = torch.div(indices, num_samples, rounding_mode='trunc')
+            votes = self.label_list[indices]
+            voting_result = torch.stack(list(map(majority_vote, votes)))
 
         return voting_result
 
@@ -479,3 +481,4 @@
         sim = torch.einsum('b d, c d -> b c', out, self.global_proto)
 
         return F.log_softmax(sim, dim=1)
+
