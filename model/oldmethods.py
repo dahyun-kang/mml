@@ -482,3 +482,135 @@
 
         return F.log_softmax(sim, dim=1)
 
+    def forward_m30(self, x, y):
+        '''
+        <m8.4 -> m30>
+        parellel transformers with class-wise kNN + text emb
+        - parallel input update (linear, knnformer)
+        - avg probs
+        - no l2normalization
+        - concat text embedding
+        '''
+        out = self.backbone(x)
+        # normalize
+        # out = F.normalize(out, p=2, dim=-1)
+        batchsize = out.shape[0]
+        with torch.no_grad():
+            # irregular memory
+            # B, 1, D
+            tr_q = out.unsqueeze(1)
+            # text emb
+            tr_knn_cat = [tr_q.repeat(1, 1, 2)]
+            for c in range(self.num_classes):
+                classwise_sim_c = torch.einsum('b d, n d -> b n', out, self.memory_list[c])
+                if self.training:
+                    k = min(self.args.k, self.train_class_count[c] - 1)
+                    # k = min(self.args.k, self.dm.max_num_samples - 1)
+                    # B, K+1
+                    _, indices_c = classwise_sim_c.topk(k=k + 1, dim=-1, largest=True, sorted=True)
+                    gt_class = c == y
+                    rangeidx = torch.arange(k).to(gt_class.device).repeat(batchsize, 1)
+                    # remove input itself from kNNs
+                    # if label y matches, then shift one idx
+                    rangeidx = rangeidx + gt_class.unsqueeze(1)
+                    indices_c = torch.gather(input=indices_c, dim=1, index=rangeidx)
+                else:
+                    k = min(self.args.k, self.train_class_count[c])
+                    # k = min(self.args.k, self.dm.max_num_samples)
+                    _, indices_c = classwise_sim_c.topk(k=k, dim=-1, largest=True, sorted=True)
+                # N, D [[B, K] -> B, K, D
+                knnemb_c = self.memory_list[c][indices_c]
+                # text emb
+                knnemb_c = torch.cat([knnemb_c, self.textlabel_list[c].repeat(batchsize, k, 1)], dim=-1)
+                tr_knn_cat.append(knnemb_c)
+
+            # B, 1 + KC, D
+            tr_knn_cat = torch.cat(tr_knn_cat, dim=1)
+
+        qout = self.linear(out)
+        # text emb
+        tr_knn_cat = self.knnencoder(tr_knn_cat)
+        nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
+        qout = torch.einsum('b d, c d -> b c', qout, self.global_proto)
+        nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
+
+        # return torch.log(0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1)))
+        avgprob = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
+        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
+        return torch.log(avgprob)
+
+    def forward_m8_4(self, x, y):
+        '''
+        <m8.4>
+        parellel transformers with class-wise kNN
+        - parallel input update (knnformer1, knnformer2)
+        - avg probs
+        - no l2normalization
+        '''
+        out = self.backbone(x)
+        # normalize
+        # out = F.normalize(out, p=2, dim=-1)
+        batchsize = out.shape[0]
+        with torch.no_grad():
+            # regular memory
+            '''
+            classwise_sim = torch.einsum('b d, c n d -> b c n', out, self.memory_list)
+            if self.training:  # to ignore self-voting
+                # B, C, N -> B, C, K
+                topk_sim, indices = classwise_sim.topk(k=self.args.k + 1, dim=-1, largest=True, sorted=True)
+                top1_sim = topk_sim[:, :, 0]
+                max_class_indices = top1_sim.argmax(dim=1)  # highly likely the self (or another twin in the feature space)
+                indices[range(batchsize), max_class_indices, :-1] = indices[range(batchsize), max_class_indices, 1:]
+                indices = indices[:, :, :-1]
+            else:
+                topk_sim, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+            # 1, C, 1
+            class_idx = torch.arange(self.num_classes).unsqueeze(0).unsqueeze(-1)
+            # C, N, D [[1, C, 1], [B, C, K]] -> B, C, K, D
+            knnemb = self.memory_list[class_idx, indices]
+            knnemb = rearrange(knnemb, 'b c k d -> b (c k) d')
+            # corresponding_proto = self.global_proto[class_ids]  # self.global_proto_learned(class_ids)
+            # B, 1, D
+            tr_q = out.unsqueeze(1)
+            # (B, 1, D), (B, C, D) -> B, (1 + C), D
+            tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
+            '''
+            # irregular memory
+            # B, 1, D
+            tr_q = out.unsqueeze(1)
+            tr_knn_cat = [tr_q]
+            for c in range(self.num_classes):
+                classwise_sim_c = torch.einsum('b d, n d -> b n', out, self.memory_list[c])
+                if self.training:
+                    k = min(self.args.k, self.train_class_count[c].int().item() - 1)
+                    # k = min(self.args.k, self.dm.max_num_samples - 1)
+                    # B, K+1
+                    _, indices_c = classwise_sim_c.topk(k=k + 1, dim=-1, largest=True, sorted=True)
+                    gt_class = c == y
+                    rangeidx = torch.arange(k).to(gt_class.device).repeat(batchsize, 1)
+                    # remove input itself from kNNs
+                    # if label y matches, then shift one idx
+                    rangeidx = rangeidx + gt_class.unsqueeze(1)
+                    indices_c = torch.gather(input=indices_c, dim=1, index=rangeidx)
+                else:
+                    k = min(self.args.k, self.train_class_count[c].int().item())
+                    # k = min(self.args.k, self.dm.max_num_samples)
+                    _, indices_c = classwise_sim_c.topk(k=k, dim=-1, largest=True, sorted=True)
+
+                # N, D [[B, K] -> B, K, D
+                knnemb_c = self.memory_list[c][indices_c]
+                tr_knn_cat.append(knnemb_c)
+
+            # B, 1 + KC, D
+            tr_knn_cat = torch.cat(tr_knn_cat, dim=1)
+
+        qout = self.linear(out)
+        nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
+        qout = torch.einsum('b d, c d -> b c', qout, self.global_proto)
+        nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
+        return qout, nout
+        # return torch.log(0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1)))
+        avgprob = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
+        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
+        return torch.log(avgprob)
+
