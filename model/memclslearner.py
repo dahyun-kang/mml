@@ -32,16 +32,6 @@ class MemClsLearner(LightningModule):
         self.memory_list = None
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
         factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
-        self.knnformer2 = TransformerEncoderLayer(d_model=self.dim,
-                                                 nhead=self.nhead,
-                                                 dim_feedforward=self.dim,
-                                                 dropout=0.0,
-                                                 # activation=F.relu,
-                                                 layer_norm_eps=1e-05,
-                                                 batch_first=True,
-                                                 norm_first=True,
-                                                 **factory_kwargs,
-                                                 )
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=self.nhead,
                                                  dim_feedforward=self.dim,
@@ -251,7 +241,7 @@ class MemClsLearner(LightningModule):
             tr_knn_cat = torch.cat([tr_q, knnemb], dim=1)
 
         qout = self.linear(out)
-        nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
+        nout = self.knnformer(tr_q, tr_knn_cat, tr_knn_cat)
 
         qout = torch.einsum('b d, c d -> b c', qout, self.global_proto)
         nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
@@ -264,7 +254,7 @@ class MemClsLearner(LightningModule):
         '''
         <m8.1.1 -> m29>
         parellel transformers with global (class-agnostic) kNN + text emb
-        - parallel input update (linear, knnformer2)
+        - parallel input update (linear, knnformer)
         - avg probs
         - no l2normalization
         - concat text embedding
@@ -298,7 +288,7 @@ class MemClsLearner(LightningModule):
         qout = self.linear(out)
         # text emb
         tr_knn_cat = self.knnencoder(tr_knn_cat)
-        nout = self.knnformer2(tr_q, tr_knn_cat, tr_knn_cat)
+        nout = self.knnformer(tr_q, tr_knn_cat, tr_knn_cat)
         qout = torch.einsum('b d, c d -> b c', qout, self.global_proto)
         nout = torch.einsum('b d, c d -> b c', nout[:, 0], self.global_proto)
         avgprob = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
