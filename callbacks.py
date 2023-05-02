@@ -12,7 +12,7 @@ class CustomCheckpoint(ModelCheckpoint):
         if not args.eval and not args.resume and args.Decoupled not in ['cRT', 'tau', 'feat_extract']:
             assert not os.path.exists(self.dirpath), f'{self.dirpath} already exists'
         self.filename = 'best_model'
-        self.monitor = 'val_acc'
+        self.monitor = 'val/acc'
 
         super(CustomCheckpoint, self).__init__(dirpath=self.dirpath,
                                                monitor=self.monitor,

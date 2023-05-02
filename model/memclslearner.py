@@ -52,6 +52,11 @@ class MemClsLearner(LightningModule):
                           nn.ReLU(inplace=True),
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
                       )
+        def eye(submodule):
+            if isinstance(submodule, nn.Linear):
+                torch.nn.init.eye_(submodule.weight)
+                submodule.bias.data.fill_(0.00)
+        self.fc.apply(eye)
 
         # self.generic_tokens = self._init_generic_tokens()
 
@@ -117,9 +122,9 @@ class MemClsLearner(LightningModule):
                 img_proto = torch.cat(img_proto, dim=0)  # C, D
 
                 # same as self.trn_img_embed = something
-                self.register_buffer(f'{split}_img_embed', img_embed)
-                self.register_buffer(f'{split}_img_label', img_label)
-                self.register_buffer(f'{split}_img_proto', img_proto)
+                self.register_buffer(f'{split}_img_embed', img_embed, persistent=False)
+                self.register_buffer(f'{split}_img_label', img_label, persistent=False)
+                self.register_buffer(f'{split}_img_proto', img_proto, persistent=False)
 
             self.train_class_count = [torch.sum(self.trn_img_label == c) for c in range(self.num_classes)]
 
@@ -150,6 +155,18 @@ class MemClsLearner(LightningModule):
 
     def on_test_start(self):
         self._load_memory_and_prototype()
+
+    # def forward_protofcmatching(self, x, y):
+    def forward(self, x, y):
+        out = self.backbone(x)
+        out = self.fc(out)
+
+        proto_ = self.trn_img_proto.to(x.device)
+        out_ = out
+        # proto_ = F.normalize(self.trn_img_proto.to(x.device), dim=-1, p=2)
+        # out_ = F.normalize(out, dim=-1, p=2)
+        sim = torch.einsum('c d, b d -> b d', proto_, out_) # * 0.001
+        return sim
 
     def forward_m8_1(self, x, y):
         '''
@@ -254,7 +271,7 @@ class MemClsLearner(LightningModule):
         loss = F.cross_entropy(avgprob, y)
         # loss = F.cross_entropy(logits + torch.log(self.base_prob.to(logits.device)), y)
         '''
-        loss = F.nll_loss(logits, y)
+        loss = F.cross_entropy(logits, y)
         self.log("train/loss", loss)
         return {'loss': loss}
 
@@ -269,7 +286,7 @@ class MemClsLearner(LightningModule):
         loss = F.cross_entropy(avgprob, y)
         # loss = F.cross_entropy(logits + torch.log(self.base_prob.to(logits.device)), y)
         '''
-        loss = F.nll_loss(logits, y)
+        loss = F.cross_entropy(logits, y)
         preds = torch.argmax(logits, dim=1)
         acc = accuracy(preds, y) * 100.
 
@@ -309,7 +326,7 @@ class MemClsLearner(LightningModule):
 
     def validation_epoch_end(self, outputs):
         epoch = self.trainer.current_epoch
-        batch_losses = [x["val_loss"] for x in outputs]
+        batch_losses = [x["val/loss"] for x in outputs]
         epoch_loss = torch.stack(batch_losses).mean()  # a bit inaccurate; drop_last=False
         epoch_acc = self.count_correct / self.count_valimgs * 100.
 
