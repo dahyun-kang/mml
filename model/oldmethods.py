@@ -62,6 +62,17 @@
 
         return memory_list
 
+    # 이걸 쓰면 왠진 몰라도 memory leak 이 생김 빡침
+    def training_epoch_end(self, outputs):
+        # print((self.memory_list_oldw == self.memory_list.weight).sum())
+        # self.memory_list_oldw.copy_(self.memory_list.weight)
+
+        with torch.no_grad():
+            e = 0.1
+            new_memory_list = self._init_memory_list()
+            old_memory_list = self.memory_list.weight
+            self.memory_list.weight.copy_((1 - e) * old_memory_list + e * new_memory_list)
+
     def forward_classwiseknn(self, x):
         out = self.backbone(x)
 

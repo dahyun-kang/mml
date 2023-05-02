@@ -35,6 +35,7 @@ class MemClsLearner(LightningModule):
         self.memory_list = None
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
         factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
+        '''
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=self.nhead,
                                                  dim_feedforward=self.dim,
@@ -46,16 +47,13 @@ class MemClsLearner(LightningModule):
                                                  **factory_kwargs,
                                                  )
         '''
-        self.linear = nn.Sequential(
+        self.fc = nn.Sequential(
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
                           nn.ReLU(inplace=True),
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
                       )
-        '''
 
         # self.generic_tokens = self._init_generic_tokens()
-
-        self.train_class_count = self._count_class_samples()
 
     def _init_backbone(self):
         """ Init pretrained backbone """
@@ -94,15 +92,6 @@ class MemClsLearner(LightningModule):
         # nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
         return generic_tokens
 
-    def _count_class_samples(self):
-        self.dm.setup(stage='init')
-        return 0
-        train_labels = np.array(self.dm.dataset_train.targets).astype(int)
-        train_class_count = []
-        for c in range(self.dm.num_classes):
-            train_class_count.append(len(train_labels[train_labels == c]))
-        return train_class_count
-
     def _load_memory_and_prototype(self):
         with torch.no_grad():
             memory_dict = dict()
@@ -114,11 +103,11 @@ class MemClsLearner(LightningModule):
                 img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
 
                 if osp.exists(img_embed_path):
-                    print(f'\n\n *** Loading embed/label checkpoints from {self.cachedir}. *** \n\n')
+                    print(f'\n *** [{split}] loading embed/label checkpoints from {self.cachedir}. *** \n')
                     img_embed = torch.load(img_embed_path)
                     img_label = torch.load(img_label_path)
                 else:
-                    print(f'\n\n *** Embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n\n')
+                    print(f'\n *** [{split}] embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n')
                     if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
                     img_embed, img_label = self._init_memory(loader, split)
                     torch.save(img_embed, img_embed_path)
@@ -131,6 +120,8 @@ class MemClsLearner(LightningModule):
                 self.register_buffer(f'{split}_img_embed', img_embed)
                 self.register_buffer(f'{split}_img_label', img_label)
                 self.register_buffer(f'{split}_img_proto', img_proto)
+
+            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in range(self.num_classes)]
 
     def _init_memory(self, loader, split):
         '''
@@ -264,21 +255,8 @@ class MemClsLearner(LightningModule):
         # loss = F.cross_entropy(logits + torch.log(self.base_prob.to(logits.device)), y)
         '''
         loss = F.nll_loss(logits, y)
-        self.log("train_loss", loss)
+        self.log("train/loss", loss)
         return {'loss': loss}
-
-    '''
-    # 이걸 쓰면 왠진 몰라도 memory leak 이 생김 빡침
-    def training_epoch_end(self, outputs):
-        # print((self.memory_list_oldw == self.memory_list.weight).sum())
-        # self.memory_list_oldw.copy_(self.memory_list.weight)
-
-        with torch.no_grad():
-            e = 0.1
-            new_memory_list = self._init_memory_list()
-            old_memory_list = self.memory_list.weight
-            self.memory_list.weight.copy_((1 - e) * old_memory_list + e * new_memory_list)
-    '''
 
     def evaluate(self, batch, stage=None):
         x, y = batch
@@ -306,9 +284,9 @@ class MemClsLearner(LightningModule):
                 self.count_class_valimgs[lbl] += 1
 
         if stage:
-            self.log(f"{stage}_loss", loss, prog_bar=True)
-            self.log(f"{stage}_acc", acc, prog_bar=True)
-        return {f'{stage}_loss': loss}
+            self.log(f"{stage}/loss", loss, prog_bar=True)
+            self.log(f"{stage}/acc", acc, prog_bar=True)
+        return {f'{stage}/loss': loss}
 
     def on_test_epoch_start(self):
         self.count_correct = 0
@@ -368,7 +346,6 @@ class MemClsLearner(LightningModule):
                 param_list.append(v)
         optimizer = torch.optim.SGD(
             param_list,
-            # list(self.knnformer.parameters()) + list(self.fc.parameters()),
             lr=self.args.lr,
             momentum=0.9,
             weight_decay=5e-4,
