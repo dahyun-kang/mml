@@ -101,7 +101,7 @@ class MemClsLearner(LightningModule):
         with torch.no_grad():
             memory_dict = dict()
             for split, loader in zip(['trn', 'val', 'tst'],
-                                     [self.dm.train_dataloader,
+                                     [self.dm.unshuffled_train_dataloader,
                                       self.dm.val_dataloader,
                                       self.dm.test_dataloader]):
                 img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
@@ -118,8 +118,8 @@ class MemClsLearner(LightningModule):
                     torch.save(img_embed, img_embed_path)
                     torch.save(img_label, img_label_path)
 
-                img_proto = [img_embed[img_label == c] for c in range(self.dm.num_classes)]
-                img_proto = torch.cat(img_proto, dim=0)  # C, D
+                img_proto = [img_embed[img_label == c].mean(dim=0) for c in range(self.dm.num_classes)]
+                img_proto = torch.stack(img_proto, dim=0)  # C, D
 
                 # same as self.trn_img_embed = something
                 self.register_buffer(f'{split}_img_embed', img_embed, persistent=False)
