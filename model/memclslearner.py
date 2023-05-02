@@ -53,13 +53,7 @@ class MemClsLearner(LightningModule):
                       )
         '''
 
-        self.generic_tokens = self._init_generic_tokens()
-
-        if args.backbone == 'resnet50':
-            self.knnformer = nn.Sequential(
-                nn.Linear(2048, self.dim),
-                self.knnformer,
-            )
+        # self.generic_tokens = self._init_generic_tokens()
 
         self.train_class_count = self._count_class_samples()
 
@@ -162,9 +156,6 @@ class MemClsLearner(LightningModule):
 
     def on_fit_start(self):
         self._load_memory_and_prototype()
-
-        self.generic_tokens = nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
-        self.old_generic_tokens = self.generic_tokens.clone()
 
     def on_test_start(self):
         self._load_memory_and_prototype()
@@ -337,15 +328,6 @@ class MemClsLearner(LightningModule):
         if self.args.LT:
             self.count_class_correct = [0 for c in range(self.dm.num_classes)]
             self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
-
-        with torch.no_grad():
-            # torch.set_printoptions(precision=2, edgeitems=50, linewidth=240)
-            diff = (self.old_generic_tokens - self.generic_tokens).abs()
-            # print(diff.mean(), diff.mean().max())
-            # print(diff)
-            # print(self.generic_tokens)
-            # print()
-            self.old_generic_tokens = self.generic_tokens.clone()
 
     def validation_epoch_end(self, outputs):
         epoch = self.trainer.current_epoch
