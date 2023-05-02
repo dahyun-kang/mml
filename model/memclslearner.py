@@ -1,5 +1,7 @@
 """ Memory-based Classification Learner """
 
+import os
+import os.path as osp
 import clip
 from tqdm import tqdm
 
@@ -28,6 +30,7 @@ class MemClsLearner(LightningModule):
         self.backbone = self._init_backbone()
         self.dim = 512
         self.nhead = 8
+        self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
 
         self.memory_list = None
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
@@ -44,7 +47,6 @@ class MemClsLearner(LightningModule):
                                                  )
         '''
         self.linear = nn.Sequential(
-                          # nn.Linear((1 + args.k) * self.dim, self.dim, **factory_kwargs),
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
                           nn.ReLU(inplace=True),
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
@@ -100,108 +102,72 @@ class MemClsLearner(LightningModule):
 
     def _count_class_samples(self):
         self.dm.setup(stage='init')
+        return 0
         train_labels = np.array(self.dm.dataset_train.targets).astype(int)
         train_class_count = []
         for c in range(self.dm.num_classes):
             train_class_count.append(len(train_labels[train_labels == c]))
         return train_class_count
 
-    def _init_memory_and_prototype(self):
+    def _load_memory_and_prototype(self):
         with torch.no_grad():
-            if self.memory_list == None:
-                # self.memory_list = self._init_regular_memory_list()
-                self.memory_list, self.label_list = self._init_irregular_memory_list()
+            memory_dict = dict()
+            for split, loader in zip(['trn', 'val', 'tst'],
+                                     [self.dm.train_dataloader,
+                                      self.dm.val_dataloader,
+                                      self.dm.test_dataloader]):
+                img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
+                img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
 
-            '''  # iregular
-            self.global_proto = self.memory_list.mean(dim=1)
-            self.global_proto = self.global_proto.detach()
-            self.global_proto.requires_grad = False
-            '''
+                if osp.exists(img_embed_path):
+                    print(f'\n\n *** Loading embed/label checkpoints from {self.cachedir}. *** \n\n')
+                    img_embed = torch.load(img_embed_path)
+                    img_label = torch.load(img_label_path)
+                else:
+                    print(f'\n\n *** Embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n\n')
+                    if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
+                    img_embed, img_label = self._init_memory(loader, split)
+                    torch.save(img_embed, img_embed_path)
+                    torch.save(img_label, img_label_path)
 
-            # irregular
-            global_proto_list = [feat_c.mean(dim=0) for feat_c in self.memory_list]
-            self.global_proto = torch.stack(global_proto_list, dim=0)
-            self.global_proto = self.global_proto.detach()
-            self.global_proto.requires_grad = False
+                img_proto = [img_embed[img_label == c] for c in range(self.num_classes)]
+                img_proto = torch.cat(img_proto, dim=0)  # C, D
 
-            # normalize
-            # self.memory_list = F.normalize(self.memory_list, p=2, dim=-1)
-            # self.global_proto = F.normalize(self.global_proto, p=2, dim=-1)
+                # same as self.trn_img_embed = something
+                self.register_buffer(f'{split}_img_embed', img_embed)
+                self.register_buffer(f'{split}_img_label', img_label)
+                self.register_buffer(f'{split}_img_proto', img_proto)
 
-            # self.memory_list = rearrange(self.memory_list, 'c n d -> (c n) d')
+    def _init_memory(self, loader, split):
+        '''
+        Return an irregular memory list of image features with different number for each class
+        '''
+        backbone = self.backbone.to(self.device)
+        backbone.eval()
+        embed_list = []
+        label_list = []
+
+        with torch.inference_mode():
+            for x, y in tqdm(loader(), desc=f'Generating {split} emb'):
+                x = x.to(self.device)
+                out = backbone(x)
+                embed_list.append(out)
+                label_list.append(y)
+
+        embed_1d = torch.cat(embed_list, dim=0).detach()  # N, D
+        label_1d = torch.cat(label_list, dim=0).detach()  # N
+        embed_1d.requires_grad = False
+        label_1d.requires_grad = False
+        return embed_1d, label_1d
 
     def on_fit_start(self):
-        self._init_memory_and_prototype()
+        self._load_memory_and_prototype()
 
         self.generic_tokens = nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
         self.old_generic_tokens = self.generic_tokens.clone()
 
     def on_test_start(self):
-        self._init_memory_and_prototype()
-
-    def _init_irregular_memory_list(self):
-        '''
-        Return an irregular memory list of image features with different number for each class
-        '''
-        train_loader = self.dm.unshuffled_train_dataloader()
-        backbone = self.backbone.to(self.device)
-        backbone.eval()
-        memory_list = [None] * self.num_classes
-        label_list = []
-
-        with torch.inference_mode():
-            for x, y in tqdm(train_loader):
-                x = x.to(self.device)
-                out = backbone(x)
-                for out_i, y_i in zip(out, y):
-                    out_i = out_i.unsqueeze(0)
-                    if memory_list[y_i] is None:
-                        memory_list[y_i] = [out_i]
-                    else:
-                        memory_list[y_i].append(out_i)
-
-        for c in range(self.num_classes):
-            memory_list[c] = torch.cat(memory_list[c], dim=0).detach()
-            memory_list[c].requires_grad = False
-            label_list += [c] * len(memory_list[c])
-        label_list = torch.tensor(label_list)
-        return memory_list, label_list
-
-    def _init_regular_memory_list(self):
-        '''
-        Return a regular memory list of image features with the same number for each class (max_num_samples)
-        '''
-        train_loader = self.dm.unshuffled_train_dataloader()
-        max_num_samples = self.dm.max_num_samples
-
-        backbone = self.backbone.to(self.device)
-        backbone.eval()
-        memory_list = [None] * self.num_classes
-
-        with torch.inference_mode():
-            for x, y in tqdm(train_loader):
-                x = x.to(self.device)
-                out = backbone(x)
-                for out_i, y_i in zip(out, y):
-                    if memory_list[y_i] is not None and len(memory_list[y_i]) == max_num_samples:
-                        continue
-
-                    out_i = out_i.unsqueeze(0)
-                    if memory_list[y_i] is None:
-                        memory_list[y_i] = [out_i]
-                    else:
-                        memory_list[y_i].append(out_i)
-
-        for c in range(self.num_classes):
-            memory_list[c] = torch.cat(memory_list[c], dim=0)
-
-        # num classes, num images, dim
-        memory_list = torch.stack(memory_list, dim=0)
-
-        memory_list = memory_list.detach()
-        memory_list.requires_grad = False
-
-        return memory_list
+        self._load_memory_and_prototype()
 
     def forward_m8_1(self, x, y):
         '''

@@ -1,3 +1,67 @@
+    def _init_irregular_memory_list(self):
+        '''
+        Return an irregular memory list of image features with different number for each class
+        '''
+        train_loader = self.dm.unshuffled_train_dataloader()
+        backbone = self.backbone.to(self.device)
+        backbone.eval()
+        memory_list = [None] * self.num_classes
+        label_list = []
+
+        with torch.inference_mode():
+            for x, y in tqdm(train_loader):
+                x = x.to(self.device)
+                out = backbone(x)
+                for out_i, y_i in zip(out, y):
+                    out_i = out_i.unsqueeze(0)
+                    if memory_list[y_i] is None:
+                        memory_list[y_i] = [out_i]
+                    else:
+                        memory_list[y_i].append(out_i)
+
+        for c in range(self.num_classes):
+            memory_list[c] = torch.cat(memory_list[c], dim=0).detach()
+            memory_list[c].requires_grad = False
+            label_list += [c] * len(memory_list[c])
+        label_list = torch.tensor(label_list)
+        return memory_list, label_list
+
+    def _init_regular_memory_list(self):
+        '''
+        Return a regular memory list of image features with the same number for each class (max_num_samples)
+        '''
+        train_loader = self.dm.unshuffled_train_dataloader()
+        max_num_samples = self.dm.max_num_samples
+
+        backbone = self.backbone.to(self.device)
+        backbone.eval()
+        memory_list = [None] * self.num_classes
+
+        with torch.inference_mode():
+            for x, y in tqdm(train_loader):
+                x = x.to(self.device)
+                out = backbone(x)
+                for out_i, y_i in zip(out, y):
+                    if memory_list[y_i] is not None and len(memory_list[y_i]) == max_num_samples:
+                        continue
+
+                    out_i = out_i.unsqueeze(0)
+                    if memory_list[y_i] is None:
+                        memory_list[y_i] = [out_i]
+                    else:
+                        memory_list[y_i].append(out_i)
+
+        for c in range(self.num_classes):
+            memory_list[c] = torch.cat(memory_list[c], dim=0)
+
+        # num classes, num images, dim
+        memory_list = torch.stack(memory_list, dim=0)
+
+        memory_list = memory_list.detach()
+        memory_list.requires_grad = False
+
+        return memory_list
+
     def forward_classwiseknn(self, x):
         out = self.backbone(x)
 
