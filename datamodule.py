@@ -490,13 +490,11 @@ class TextToken_Dataset(Dataset):
 
         return sample, label
 
-class AbstractImageNet100DataModule(AbstractDataModule):
+class ImageNet100DataModule(AbstractDataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
         
-        self.sub_dirs = []
-        self.label_file = ''
         self.max_classes = None
         self.max_num_samples = 1300
 
@@ -505,27 +503,24 @@ class AbstractImageNet100DataModule(AbstractDataModule):
         label_mapping_file = 'labels.txt'
         wiki_dir = 'wiki'
 
-        self.dataset_train = self.dataset(root, train=True, sub_dirs=self.sub_dirs, label_file=self.label_file, label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+        self.dataset_train = self.dataset(root, train=True, sub_dirs=['train.X1', 'train.X2'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
                                           max_classes=self.max_classes, max_samples=self.max_num_samples, transform=self.train_transform)
-        self.dataset_val = self.dataset(root, train=False, sub_dirs=['val.X'], label_file=self.label_file, label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=self.max_classes, max_samples=None, transform=self.val_transform)
+        self.dataset_val = self.dataset(root, train=True, sub_dirs=['train.X3'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+                                          max_classes=None, max_samples=None, transform=self.val_transform)
+        self.dataset_test = self.dataset(root, train=True, sub_dirs=['train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+                                          max_classes=None, max_samples=None, transform=self.val_transform)
+
         self.dataset_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
+
+    def test_dataloader(self):
+        return DataLoader(self.dataset_test, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+
+    def text_dataloader(self):
+        return DataLoader(self.dataset_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     @property
     def num_classes(self) -> int:
         return self.dataset_train.num_classes
-    
-    def text_dataloader(self):
-        return DataLoader(self.dataset_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-class ImageNet100DataModule(AbstractImageNet100DataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.sub_dirs = ['train.X1', 'train.X2', 'train.X3', 'train.X4']
-        self.label_file = 'Xlabel.json'
-        self.max_classes = None
-        self.max_num_samples = 1300
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     dataset_dict = {'cifar10': CIFAR10DataModule,
