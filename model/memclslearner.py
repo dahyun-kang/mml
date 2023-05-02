@@ -26,7 +26,7 @@ class MemClsLearner(LightningModule):
 
         self.args = args
         self.dm = dm
-        self.num_classes = dm.num_classes
+        # self.num_classes = dm.num_classes # please use self.dm.num_classes directly.
         self.backbone = self._init_backbone()
         self.dim = 512
         self.nhead = 8
@@ -118,7 +118,7 @@ class MemClsLearner(LightningModule):
                     torch.save(img_embed, img_embed_path)
                     torch.save(img_label, img_label_path)
 
-                img_proto = [img_embed[img_label == c] for c in range(self.num_classes)]
+                img_proto = [img_embed[img_label == c] for c in range(self.dm.num_classes)]
                 img_proto = torch.cat(img_proto, dim=0)  # C, D
 
                 # same as self.trn_img_embed = something
@@ -126,7 +126,7 @@ class MemClsLearner(LightningModule):
                 self.register_buffer(f'{split}_img_label', img_label, persistent=False)
                 self.register_buffer(f'{split}_img_proto', img_proto, persistent=False)
 
-            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in range(self.num_classes)]
+            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in range(self.dm.num_classes)]
 
     def _init_memory(self, loader, split):
         '''
