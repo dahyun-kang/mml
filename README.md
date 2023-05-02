@@ -26,6 +26,29 @@ python main.py \
     --logpath $YOURLOGPATH
 ```
 
+### ImageNet100 data preparation
+
+Download and extract ImageNet100 from [here](https://www.kaggle.com/datasets/ambityga/imagenet100).
+Then download and extract the [wiki text](https://github.com/ChangyaoTian/VL-LTR/releases/download/text-corpus/imagenet.zip) into the same directory, and the directory tree of data is expected to be like this:
+
+```
+{your root path}/imagenet100/
+  train.X1
+  train.X2
+  train.X3
+  train.X4
+  val.X
+  wiki/
+  	desc_1.txt
+  labels.txt
+
+  # not in use
+  ImageNet_LT_test.txt
+  ImageNet_LT_train.txt
+  ImageNet_LT_val.txt
+  Labels.json 
+```
+
 ## Reproduce Experiments
 ### Joint learning
 ```python
