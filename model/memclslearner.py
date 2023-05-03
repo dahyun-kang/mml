@@ -159,6 +159,64 @@ class MemClsLearner(LightningModule):
     def on_test_start(self):
         self._load_memory_and_prototype()
 
+    # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree naiveproto --eval --nowandb
+    def forward_naive_protomatching(self, x, y):
+        out = self.backbone(x)
+
+        if self.args.dataset != 'imagenet100':
+            raise NotImplementedError
+        assert self.args.eval, "This method can't be learned"
+
+        proto = self.tst_img_proto.to(x.device)
+
+        out_ = out
+        proto_ = proto
+        
+        # l2_norm
+        # out_ = F.normalize(out, dim=-1, p=2)
+        # proto_ = F.normalize(proto, dim=-1, p=2)
+
+        sim = torch.einsum('c d, b d -> b c', proto_, out_) # * 0.001
+        return sim
+    
+    # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree nakata22 --k 1 --eval --nowandb
+    def forward_nakata22(self, x, y):
+        out = self.backbone(x)
+
+        if self.args.dataset != 'imagenet100':
+            raise NotImplementedError
+        assert self.args.eval, "This method can't be learned"
+
+        memory = self.tst_img_embed.to(x.device)
+        labels = self.tst_img_label
+        num_cls = max(labels)+1
+
+        out_ = out
+        memory_ = memory
+
+        # l2_norm
+        # out_ = F.normalize(out, dim=-1, p=2)
+        # memory_ = F.normalize(memory, dim=-1, p=2)
+
+        globalsim = torch.einsum('b d, n d -> b n', out_, memory_)
+        _, indices = globalsim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+        globalcls = labels[indices]
+
+        def majority_vote(input):
+            count = [0]*num_cls
+            for item in input:
+                count[item.cpu().item()] += 1
+
+            onehot = torch.argmax(torch.tensor(count)).item() # just vote
+            result = torch.tensor([0.]*num_cls)
+            result[onehot] = 1.0
+
+            return result.to(x.device)
+
+        sim = torch.stack(list(map(majority_vote, globalcls)))
+
+        return sim
+
     # def forward_protofcmatching(self, x, y):
     def forward(self, x, y):
         out = self.backbone(x)

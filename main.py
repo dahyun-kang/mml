@@ -31,7 +31,8 @@ if __name__ == '__main__':
     parser.add_argument('--ntokens', type=int, default=0, help='Number of tokens')
     parser.add_argument('--maxepochs', type=int, default=3000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
-    parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
+    # parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
+    parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto'], help="Run a model don't have any differentiable parameters")
     parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
     parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
     parser.add_argument('--Decoupled', type=str, default=None, choices=['joint', 'cRT', 'tau', 'feat_extract'], help='Flag to run reproducing expriement of Decoupled Learning')
@@ -111,8 +112,13 @@ if __name__ == '__main__':
         dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
         model = MemClsLearner(args, dm=dm)
 
-        if args.nakata22:
-            model.forward = model.forward_nakata22
+        # if args.nakata22:
+        #     model.forward = model.forward_nakata22
+        if args.runfree:
+            if args.runfree == 'nakata22':
+                model.forward = model.forward_nakata22
+            elif args.runfree == 'naiveproto':
+                model.forward = model.forward_naive_protomatching
 
         trainer = Trainer(
             max_epochs=args.maxepochs,
@@ -125,11 +131,13 @@ if __name__ == '__main__':
             # gradient_clip_val=5.0,
         )
 
-        if args.nakata22:
-            # non-differentiable majority voting method, Nakata et al., ECCV 2022
+        # if args.nakata22:
+        #     # non-differentiable majority voting method, Nakata et al., ECCV 2022
+        #     trainer.test(model, datamodule=dm)
+        if args.runfree:
             trainer.test(model, datamodule=dm)
 
-        if args.eval:
+        elif args.eval:
             modelpath = checkpoint_callback.modelpath
             model = MemClsLearner.load_from_checkpoint(modelpath, args=args, dm=dm)
             trainer.test(model=model, datamodule=dm)
