@@ -127,7 +127,8 @@ class MemClsLearner(LightningModule):
                 self.register_buffer(f'{split}_img_label', img_label, persistent=False)
                 self.register_buffer(f'{split}_img_proto', img_proto, persistent=False)
 
-            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in img_label_idx]
+            trn_img_label_idx = self.trn_img_label.unique().sort()[0]
+            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in trn_img_label_idx]
 
     def _init_memory(self, loader, split):
         '''
