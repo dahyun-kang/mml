@@ -102,9 +102,9 @@ class MemClsLearner(LightningModule):
         with torch.no_grad():
             memory_dict = dict()
             for split, loader in zip(['trn', 'val', 'tst'],
-                                     [self.dm.unshuffled_train_dataloader,
-                                      self.dm.val_dataloader,
-                                      self.dm.test_dataloader]):
+                                     [self.dm.train_memory_dataloader,
+                                      self.dm.val_memory_dataloader,
+                                      self.dm.test_memory_dataloader]):
                 img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
                 img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
 
@@ -127,6 +127,9 @@ class MemClsLearner(LightningModule):
                 self.register_buffer(f'{split}_img_embed', img_embed, persistent=False)
                 self.register_buffer(f'{split}_img_label', img_label, persistent=False)
                 self.register_buffer(f'{split}_img_proto', img_proto, persistent=False)
+
+                num_samples = int(img_embed.shape[0]) // (int(max(img_label))+1)
+                print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
 
             trn_img_label_idx = self.trn_img_label.unique().sort()[0]
             self.train_class_count = [torch.sum(self.trn_img_label == c) for c in trn_img_label_idx]

@@ -394,8 +394,11 @@ Attribute (may someone needed....)
         number of sentences of each classes. same as #_sentences
 """
 class ImageNet100_Dataset(Dataset):
-    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None):
+    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False):
         self.root = root
+
+        self.memory_split = 1000 # query : [0 ~ self.memory_split -1], memory : [self.memory_split ~ self.total_samples -1]
+        self.total_samples = 1300
 
         self.sub_dirs = sub_dirs # choose in ['train.X1', 'train.X2', 'train.X3', 'train.X4', 'val.X']
         self.sub_idxs = [sorted(os.listdir(os.path.join(self.root, subdir))) for subdir in self.sub_dirs]
@@ -408,8 +411,9 @@ class ImageNet100_Dataset(Dataset):
             self.loaded_idxs = self.loaded_idxs[:max_classes]
 
         self.num_classes = len(self.loaded_idxs)
-        self.num_samples = max_samples if max_samples else 1300
-    
+        # self.num_samples = max_samples if max_samples else 1300
+        self.num_samples = max_samples if max_samples else self.total_samples - self.memory_split if is_memory else self.memory_split
+
         self.img_path = []
         self.targets = []
         self.transform = transform
@@ -419,7 +423,11 @@ class ImageNet100_Dataset(Dataset):
         for i, idxs in enumerate(self.sub_idxs):
             for idx in idxs:
                 if idx not in self.loaded_idxs: continue
-                for imgdir in sorted(os.listdir(os.path.join(root, self.sub_dirs[i], idx))):
+
+                imgdirs = sorted(os.listdir(os.path.join(root, self.sub_dirs[i], idx)))
+                imgdirs = imgdirs[self.memory_split:] if is_memory else imgdirs[:self.memory_split]
+
+                for imgdir in imgdirs:
                     target = idxs_cls[idx]
                     if num_samples_count[target] > self.num_samples: continue
 
@@ -428,6 +436,7 @@ class ImageNet100_Dataset(Dataset):
 
                     num_samples_count[target] += 1
 
+        assert sum(num_samples_count) == self.num_samples * self.num_classes
         assert self.num_classes == max(self.targets) + 1
 
         # sentence token generator
@@ -452,7 +461,7 @@ class ImageNet100_Dataset(Dataset):
     
     def _label_generator(self, root, txt):
         if txt != '' and os.path.exists(os.path.join(root, txt)):
-            print(f'Label file exist')
+            print(f'Label file exist : {os.path.join(root, txt)}')
             with open(os.path.join(root, txt), 'r') as jsonfile:
                 idx_classes = json.load(jsonfile)
         else:
@@ -496,7 +505,7 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset = ImageNet100_Dataset
         
         self.max_classes = None
-        self.max_num_samples = 1300
+        self.max_memory_num_samples = 300
 
     def setup(self, stage: str):
         root = os.path.join(self.hparams.datadir, 'imagenet100')
@@ -504,11 +513,18 @@ class ImageNet100DataModule(AbstractDataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=['train.X1'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=self.max_classes, max_samples=self.max_num_samples, transform=self.train_transform)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False)
         self.dataset_val = self.dataset(root, train=True, sub_dirs=['train.X2'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=None, max_samples=None, transform=self.val_transform)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False)
         self.dataset_test = self.dataset(root, train=True, sub_dirs=['train.X3', 'train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=None, max_samples=None, transform=self.val_transform)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False)
+        
+        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=['train.X1'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+                                          max_classes=self.max_classes, max_samples=self.max_memory_num_samples, transform=self.train_transform, is_memory=True)
+        self.dataset_val_memory = self.dataset(root, train=True, sub_dirs=['train.X2'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True)
+        self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=['train.X3', 'train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True)
 
         self.dataset_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
 
@@ -517,6 +533,13 @@ class ImageNet100DataModule(AbstractDataModule):
 
     def text_dataloader(self):
         return DataLoader(self.dataset_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+    
+    def train_memory_dataloader(self):
+        return DataLoader(self.dataset_train_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+    def val_memory_dataloader(self):
+        return DataLoader(self.dataset_val_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+    def test_memory_dataloader(self):
+        return DataLoader(self.dataset_test_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     @property
     def num_classes(self) -> int:
