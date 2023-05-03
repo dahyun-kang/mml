@@ -429,7 +429,7 @@ class ImageNet100_Dataset(Dataset):
 
                 for imgdir in imgdirs:
                     target = idxs_cls[idx]
-                    if num_samples_count[target] > self.num_samples: continue
+                    if num_samples_count[target] >= self.num_samples: continue
 
                     self.img_path.append(os.path.join(root, self.sub_dirs[i], idx, imgdir))
                     self.targets.append(target)
@@ -505,7 +505,7 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset = ImageNet100_Dataset
         
         self.max_classes = None
-        self.max_memory_num_samples = 300
+        self.max_qeury_num_samples = 500 # 1000
 
     def setup(self, stage: str):
         root = os.path.join(self.hparams.datadir, 'imagenet100')
@@ -513,14 +513,14 @@ class ImageNet100DataModule(AbstractDataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=['train.X1'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False)
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False)
         self.dataset_val = self.dataset(root, train=True, sub_dirs=['train.X2'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False)
         self.dataset_test = self.dataset(root, train=True, sub_dirs=['train.X3', 'train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False)
         
         self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=['train.X1'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=self.max_classes, max_samples=self.max_memory_num_samples, transform=self.train_transform, is_memory=True)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True)
         self.dataset_val_memory = self.dataset(root, train=True, sub_dirs=['train.X2'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True)
         self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=['train.X3', 'train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
