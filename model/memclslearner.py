@@ -161,7 +161,18 @@ class MemClsLearner(LightningModule):
         out = self.backbone(x)
         out = self.fc(out)
 
-        proto_ = self.trn_img_proto.to(x.device)
+        if self.args.dataset != 'imagenet100':
+            raise NotImplementedError
+
+        if not self.args.eval and self.training:
+            proto = self.trn_img_proto
+        elif not self.args.eval and not self.training:
+            proto = self.val_img_proto
+        elif self.args.eval:
+            proto = self.tst_img_proto
+        else:
+            assert False, "You should not reach here"
+        proto_ = proto.to(x.device)
         out_ = out
         # proto_ = F.normalize(self.trn_img_proto.to(x.device), dim=-1, p=2)
         # out_ = F.normalize(out, dim=-1, p=2)
