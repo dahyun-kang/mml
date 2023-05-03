@@ -503,11 +503,11 @@ class ImageNet100DataModule(AbstractDataModule):
         label_mapping_file = 'labels.txt'
         wiki_dir = 'wiki'
 
-        self.dataset_train = self.dataset(root, train=True, sub_dirs=['train.X1', 'train.X2'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+        self.dataset_train = self.dataset(root, train=True, sub_dirs=['train.X1'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
                                           max_classes=self.max_classes, max_samples=self.max_num_samples, transform=self.train_transform)
-        self.dataset_val = self.dataset(root, train=True, sub_dirs=['train.X3'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+        self.dataset_val = self.dataset(root, train=True, sub_dirs=['train.X2'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
                                           max_classes=None, max_samples=None, transform=self.val_transform)
-        self.dataset_test = self.dataset(root, train=True, sub_dirs=['train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
+        self.dataset_test = self.dataset(root, train=True, sub_dirs=['train.X3', 'train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
                                           max_classes=None, max_samples=None, transform=self.val_transform)
 
         self.dataset_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
