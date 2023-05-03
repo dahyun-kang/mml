@@ -505,7 +505,7 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset = ImageNet100_Dataset
         
         self.max_classes = None
-        self.max_qeury_num_samples = 500 # 1000
+        self.max_qeury_num_samples = 1000
 
     def setup(self, stage: str):
         root = os.path.join(self.hparams.datadir, 'imagenet100')
