@@ -118,7 +118,8 @@ class MemClsLearner(LightningModule):
                     torch.save(img_embed, img_embed_path)
                     torch.save(img_label, img_label_path)
 
-                img_proto = [img_embed[img_label == c].mean(dim=0) for c in range(self.dm.num_classes)]
+                img_label_idx = img_label.unique().sort()[0]
+                img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
                 img_proto = torch.stack(img_proto, dim=0)  # C, D
 
                 # same as self.trn_img_embed = something
@@ -126,7 +127,7 @@ class MemClsLearner(LightningModule):
                 self.register_buffer(f'{split}_img_label', img_label, persistent=False)
                 self.register_buffer(f'{split}_img_proto', img_proto, persistent=False)
 
-            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in range(self.dm.num_classes)]
+            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in img_label_idx]
 
     def _init_memory(self, loader, split):
         '''
@@ -176,7 +177,7 @@ class MemClsLearner(LightningModule):
         out_ = out
         # proto_ = F.normalize(self.trn_img_proto.to(x.device), dim=-1, p=2)
         # out_ = F.normalize(out, dim=-1, p=2)
-        sim = torch.einsum('c d, b d -> b c', proto_, out_) # * 0.001
+        sim = torch.einsum('c d, b d -> b c', proto_, out_)
         return sim
 
     def forward_m8_1(self, x, y):
