@@ -48,6 +48,7 @@ class MemClsLearner(LightningModule):
                                                  )
         '''
         self.fc = nn.Sequential(
+                          # nn.LayerNorm(self.dim, **factory_kwargs),
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
                           nn.ReLU(inplace=True),
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
@@ -174,10 +175,9 @@ class MemClsLearner(LightningModule):
             proto = self.tst_img_proto
         else:
             assert False, "You should not reach here"
-        proto_ = proto.to(x.device)
-        out_ = out
-        # proto_ = F.normalize(self.trn_img_proto.to(x.device), dim=-1, p=2)
-        # out_ = F.normalize(out, dim=-1, p=2)
+
+        proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
         sim = torch.einsum('c d, b d -> b c', proto_, out_)
         return sim
 
