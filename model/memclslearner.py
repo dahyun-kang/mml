@@ -165,7 +165,7 @@ class MemClsLearner(LightningModule):
         out_ = out
         # proto_ = F.normalize(self.trn_img_proto.to(x.device), dim=-1, p=2)
         # out_ = F.normalize(out, dim=-1, p=2)
-        sim = torch.einsum('c d, b d -> b d', proto_, out_) # * 0.001
+        sim = torch.einsum('c d, b d -> b c', proto_, out_) # * 0.001
         return sim
 
     def forward_m8_1(self, x, y):
