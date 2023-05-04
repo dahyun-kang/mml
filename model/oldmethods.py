@@ -689,3 +689,7 @@
         avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
         return torch.log(avgprob)
 
+    def standardize(self, x, dim=1, eps=1e-6):
+        out = x - x.mean(dim=dim, keepdim=True)
+        out = out / (out.std(dim=dim, keepdim=True) + eps)
+        return out

@@ -174,14 +174,14 @@ class MemClsLearner(LightningModule):
 
         out_ = out
         proto_ = proto
-        
+
         # l2_norm
         # out_ = F.normalize(out, dim=-1, p=2)
         # proto_ = F.normalize(proto, dim=-1, p=2)
 
         sim = torch.einsum('c d, b d -> b c', proto_, out_) # * 0.001
         return sim
-    
+
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree nakata22 --k 1 --eval --nowandb
     def forward_nakata22(self, x, y):
         out = self.backbone(x)
@@ -334,32 +334,10 @@ class MemClsLearner(LightningModule):
         avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
         return torch.log(avgprob)
 
-    def training_step(self, batch, batch_idx):
+    def each_step(self, batch, stage=None):
         self.backbone.eval()
         x, y = batch
         logits = self(x, y)
-        '''
-        qout, nout = logits
-        avgprob = 0.5 * (F.softmax(qout + torch.log(self.base_prob.to(qout.device)), dim=1) + F.softmax(nout + torch.log(self.base_prob.to(nout.device)), dim=1))
-        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
-        loss = F.cross_entropy(avgprob, y)
-        # loss = F.cross_entropy(logits + torch.log(self.base_prob.to(logits.device)), y)
-        '''
-        loss = F.cross_entropy(logits, y)
-        self.log("train/loss", loss)
-        return {'loss': loss}
-
-    def evaluate(self, batch, stage=None):
-        x, y = batch
-        logits = self(x, y)
-        '''
-        qout, nout = logits
-        logits = 0.5 * (F.softmax(qout, dim=1) + F.softmax(nout, dim=1))
-        avgprob = 0.5 * (F.softmax(qout + torch.log(self.base_prob.to(logits.device)), dim=1) + F.softmax(nout + torch.log(self.base_prob.to(logits.device)), dim=1))
-        avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
-        loss = F.cross_entropy(avgprob, y)
-        # loss = F.cross_entropy(logits + torch.log(self.base_prob.to(logits.device)), y)
-        '''
         loss = F.cross_entropy(logits, y)
         preds = torch.argmax(logits, dim=1)
         acc = accuracy(preds, y) * 100.
@@ -377,26 +355,34 @@ class MemClsLearner(LightningModule):
         if stage:
             self.log(f"{stage}/loss", loss, prog_bar=True)
             self.log(f"{stage}/acc", acc, prog_bar=True)
-        return {f'{stage}/loss': loss}
 
-    def on_test_epoch_start(self):
-        self.count_correct = 0
-        self.count_valimgs = 0
+        return {'loss': loss} if stage == 'train' else {f'{stage}/loss': loss}
 
-        if self.args.LT:
-            self.count_class_correct = [0 for c in range(self.dm.num_classes)]
-            self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
+    def training_step(self, batch, batch_idx):
+        return self.each_step(batch, stage='train')
 
     def validation_step(self, batch, batch_idx):
-        return self.evaluate(batch, "val")
+        return self.each_step(batch, "val")
 
-    def on_validation_epoch_start(self):
+    def test_step(self, batch, batch_idx):
+        self.each_step(batch, "test")
+
+    def on_each_epoch_start(self):
         self.count_correct = 0
         self.count_valimgs = 0
 
         if self.args.LT:
             self.count_class_correct = [0 for c in range(self.dm.num_classes)]
             self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
+
+    def on_train_epoch_start(self):
+        self.on_each_epoch_start()
+
+    def on_test_epoch_start(self):
+        self.on_each_epoch_start()
+
+    def on_validation_epoch_start(self):
+        self.on_each_epoch_start()
 
     def validation_epoch_end(self, outputs):
         epoch = self.trainer.current_epoch
@@ -427,9 +413,6 @@ class MemClsLearner(LightningModule):
         result = "\n\n\n" + result + "\n"
         print(result)
 
-    def test_step(self, batch, batch_idx):
-        self.evaluate(batch, "test")
-
     def configure_optimizers(self):
         param_list = []
         for k, v in self.named_parameters():
@@ -443,9 +426,3 @@ class MemClsLearner(LightningModule):
         )
 
         return {"optimizer": optimizer}
-
-    def standardize(self, x, dim=1, eps=1e-6):
-        out = x - x.mean(dim=dim, keepdim=True)
-        out = out / (out.std(dim=dim, keepdim=True) + eps)
-        return out
-
