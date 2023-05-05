@@ -338,19 +338,9 @@ class MemClsLearner(LightningModule):
         avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
         return torch.log(avgprob)
 
-    def each_step(self, batch, stage=None):
-        self.backbone.eval()
-        x, y = batch
-        logits = self(x, y)
-        loss = F.cross_entropy(logits, y)
-        preds = torch.argmax(logits, dim=1)
-        acc = accuracy(preds, y) * 100.
-
-        count_correct = (preds == y).int().sum()
-        batchsize = int(y.shape[0])  # batchsize may vary as drop_last=False
-
-        self.count_correct[stage] += count_correct
-        self.count_all[stage] += batchsize
+    def record_metrics(self, count_correct_batch, count_all_batch, loss, stage):
+        self.count_correct[stage] += count_correct_batch
+        self.count_all[stage] += count_all_batch
         self.loss_all[stage].append(loss)
 
         if self.args.LT:
@@ -360,6 +350,20 @@ class MemClsLearner(LightningModule):
             for ans, lbl in zip(correct.tolist(), y.tolist()):
                 self.count_class_correct[lbl] += ans
                 self.count_class_valimgs[lbl] += 1
+
+    def each_step(self, batch, stage=None):
+        self.backbone.eval()
+        x, y = batch
+        logits = self(x, y)
+        loss = F.cross_entropy(logits, y)
+
+        with torch.no_grad():
+            preds = torch.argmax(logits, dim=1)
+            acc = accuracy(preds, y) * 100.
+
+            count_correct = (preds == y).int().sum()
+            batchsize = int(y.shape[0])  # batchsize may vary as drop_last=False
+            self.record_metrics(count_correct, batchsize, loss, stage)
 
         return {'loss': loss}
 
