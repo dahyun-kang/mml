@@ -105,6 +105,9 @@ class MemClsLearner(LightningModule):
     def _load_memory_and_prototype(self):
         with torch.no_grad():
             memory_dict = dict()
+            self.img_embed = {'trn': None, 'val': None, 'tst': None}
+            self.img_label = {'trn': None, 'val': None, 'tst': None}
+            self.img_proto = {'trn': None, 'val': None, 'tst': None}
             for split, loader in zip(['trn', 'val', 'tst'],
                                      [self.dm.train_memory_dataloader,
                                       self.dm.val_memory_dataloader,
@@ -127,16 +130,15 @@ class MemClsLearner(LightningModule):
                 img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
                 img_proto = torch.stack(img_proto, dim=0)  # C, D
 
-                # same as self.trn_img_embed = something
-                self.register_buffer(f'{split}_img_embed', img_embed, persistent=False)
-                self.register_buffer(f'{split}_img_label', img_label, persistent=False)
-                self.register_buffer(f'{split}_img_proto', img_proto, persistent=False)
+                self.img_embed[split] = img_embed
+                self.img_label[split] = img_label
+                self.img_proto[split] = img_proto
 
                 num_samples = int(img_embed.shape[0]) // (int(max(img_label))+1)
                 print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
 
-            trn_img_label_idx = self.trn_img_label.unique().sort()[0]
-            self.train_class_count = [torch.sum(self.trn_img_label == c) for c in trn_img_label_idx]
+            trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
+            self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
 
     def _init_memory(self, loader, split):
         '''
@@ -174,7 +176,7 @@ class MemClsLearner(LightningModule):
             raise NotImplementedError
         assert self.args.eval, "This method can't be learned"
 
-        proto = self.tst_img_proto.to(x.device)
+        proto = self.img_proto['tst'].to(x.device)
 
         out_ = out
         proto_ = proto
@@ -194,8 +196,8 @@ class MemClsLearner(LightningModule):
             raise NotImplementedError
         assert self.args.eval, "This method can't be learned"
 
-        memory = self.tst_img_embed.to(x.device)
-        labels = self.tst_img_label
+        memory = self.img_embed['tst'].to(x.device)
+        labels = self.img_label['tst']
         num_cls = max(labels)+1
 
         out_ = out
@@ -225,21 +227,14 @@ class MemClsLearner(LightningModule):
         return sim
 
     # def forward_protofcmatching(self, x, y):
-    def forward(self, x, y):
+    def forward(self, x, y, stage):
         out = self.backbone(x)
         out = self.fc(out)
 
         if self.args.dataset != 'imagenet100':
             raise NotImplementedError
 
-        if not self.args.eval and self.training:
-            proto = self.trn_img_proto
-        elif not self.args.eval and not self.training:
-            proto = self.val_img_proto
-        elif self.args.eval:
-            proto = self.tst_img_proto
-        else:
-            assert False, "You should not reach here"
+        proto = self.img_proto[stage]
 
         proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
         out_ = F.normalize(out, dim=-1, p=2)
@@ -354,7 +349,7 @@ class MemClsLearner(LightningModule):
     def each_step(self, batch, stage=None):
         self.backbone.eval()
         x, y = batch
-        logits = self(x, y)
+        logits = self(x, y, stage=stage)
         loss = F.cross_entropy(logits, y)
 
         with torch.no_grad():
