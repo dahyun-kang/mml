@@ -32,6 +32,10 @@ class MemClsLearner(LightningModule):
         self.nhead = 8
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
 
+        self.count_correct = {'trn': 0.0, 'val': 0.0, 'tst': 0.0}
+        self.count_all = {'trn': 0.0, 'val': 0.0, 'tst': 0.0}
+        self.loss_all = {'trn': [], 'val': [], 'tst': []}
+
         self.memory_list = None
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
         factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
@@ -342,56 +346,51 @@ class MemClsLearner(LightningModule):
         preds = torch.argmax(logits, dim=1)
         acc = accuracy(preds, y) * 100.
 
-        self.count_correct += (preds == y).int().sum()
-        self.count_valimgs += int(y.shape[0])
+        count_correct = (preds == y).int().sum()
+        batchsize = int(y.shape[0])  # batchsize may vary as drop_last=False
+
+        self.count_correct[stage] += count_correct
+        self.count_all[stage] += batchsize
+        self.loss_all[stage].append(loss)
 
         if self.args.LT:
+            raise NotImplementedError('trn/val/tst split not considered')
             correct = (preds == y).int()
 
             for ans, lbl in zip(correct.tolist(), y.tolist()):
                 self.count_class_correct[lbl] += ans
                 self.count_class_valimgs[lbl] += 1
 
-        if stage:
-            self.log(f"{stage}/loss", loss, prog_bar=True)
-            self.log(f"{stage}/acc", acc, prog_bar=True)
-
-        return {'loss': loss} if stage == 'train' else {f'{stage}/loss': loss}
+        return {'loss': loss}
 
     def training_step(self, batch, batch_idx):
-        return self.each_step(batch, stage='train')
+        return self.each_step(batch, stage='trn')
 
     def validation_step(self, batch, batch_idx):
         return self.each_step(batch, "val")
 
     def test_step(self, batch, batch_idx):
-        self.each_step(batch, "test")
+        return self.each_step(batch, "tst")
 
-    def on_each_epoch_start(self):
-        self.count_correct = 0
-        self.count_valimgs = 0
-
-        if self.args.LT:
-            self.count_class_correct = [0 for c in range(self.dm.num_classes)]
-            self.count_class_valimgs = [0 for c in range(self.dm.num_classes)]
-
-    def on_train_epoch_start(self):
-        self.on_each_epoch_start()
-
-    def on_test_epoch_start(self):
-        self.on_each_epoch_start()
-
-    def on_validation_epoch_start(self):
-        self.on_each_epoch_start()
-
-    def validation_epoch_end(self, outputs):
+    def each_epoch_end(self, stage):
         epoch = self.trainer.current_epoch
-        batch_losses = [x["val/loss"] for x in outputs]
-        epoch_loss = torch.stack(batch_losses).mean()  # a bit inaccurate; drop_last=False
-        epoch_acc = self.count_correct / self.count_valimgs * 100.
+        epoch_loss = torch.stack(self.loss_all[stage]).mean()  # a bit inaccurate; drop_last=False
+        epoch_acc = self.count_correct[stage] / self.count_all[stage] * 100.
 
-        result = f'Epoch {epoch}: | val_loss: {epoch_loss:.4f} | val_acc: {epoch_acc:.2f}'
+        self.log(f'{stage}/loss', epoch_loss, on_epoch=True)
+        self.log(f'{stage}/acc', epoch_acc, on_epoch=True)
+
+        result = f'Epoch {epoch}: | {stage}/loss: {epoch_loss:.4f} | {stage}/acc: {epoch_acc:.2f}'
+
+        # re-initialize metric cache
+        self.count_correct[stage] = 0.
+        self.count_all[stage] = 0.
+        self.loss_all[stage] = []
+
         if self.args.LT:
+            # You will come across self.count_class_correct undefined error. You can define it in the
+            # class initializer and re-initialize it in this function after use
+            raise NotImplementedError('trn/val acc compuation not implemented')
             many_shot = []
             medium_shot = []
             few_shot = []
@@ -412,6 +411,15 @@ class MemClsLearner(LightningModule):
 
         result = "\n\n\n" + result + "\n"
         print(result)
+
+    def on_train_epoch_end(self):
+        self.each_epoch_end(stage='trn')
+
+    def on_validation_epoch_end(self):
+        self.each_epoch_end(stage='val')
+
+    def on_test_epoch_end(self):
+        self.each_epoch_end(stage='tst')
 
     def configure_optimizers(self):
         param_list = []
