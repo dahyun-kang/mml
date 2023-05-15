@@ -423,13 +423,14 @@ class MemClsLearner(LightningModule):
     def configure_optimizers(self):
         param_list = []
         for k, v in self.named_parameters():
-            if not 'backbone' in k:
+            if not 'backbone' in k:  # or 'ln' in k:
                 param_list.append(v)
-        optimizer = torch.optim.SGD(
+        optimizer = torch.optim.Adam(
             param_list,
             lr=self.args.lr,
-            momentum=0.9,
-            weight_decay=5e-4,
+            # momentum=0.9,
+            weight_decay=self.args.wd,
+            eps=1e-6,
         )
 
         return {"optimizer": optimizer}
