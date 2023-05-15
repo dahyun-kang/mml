@@ -74,6 +74,10 @@ class MemClsLearner(LightningModule):
                 model = torchvision.models.resnet18(weights='IMAGENET1K_V1', num_classes=1000)
             elif self.args.backbone == 'resnet50':
                 model = torchvision.models.resnet50(weights='IMAGENET1K_V1', num_classes=1000)
+            elif self.args.backbone == 'resnet50coco':
+                model = torchvision.models.segmentation.deeplabv3_resnet50(weights='COCO_WITH_VOC_LABELS_V1')
+                model.classifier = nn.Identity()
+                model.aux_classifier = nn.Identity()
             else:
                 raise NotImplementedError
 
@@ -93,8 +97,17 @@ class MemClsLearner(LightningModule):
         elif self.args.backbone == 'clipRN50':
             model, preprocess = clip.load("RN50")
             model.forward = model.encode_image
+        elif self.args.backbone == 'mobilenetcoco':
+            model = torchvision.models.segmentation.deeplabv3_mobilenet_v3_large(weights='COCO_WITH_VOC_LABELS_V1')
+            model.classifier = nn.Identity()
+            model.aux_classifier = nn.Identity()
 
         model.requires_grad_(requires_grad=False)
+        '''
+        for m in model.modules():
+            if isinstance(m, nn.LayerNorm):
+                model.requires_grad_(requires_grad=True)
+        '''
         return model
 
     def _init_generic_tokens(self):
