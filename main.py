@@ -27,9 +27,11 @@ if __name__ == '__main__':
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
-    parser.add_argument('--k', type=int, default=10, help='K KNN')
+    parser.add_argument('--wd', type=float, default=1e-2, help='Weight decay')
+    parser.add_argument('--multemp', type=float, default=16., help='Multiplying temperature')
+    parser.add_argument('--k', type=int, default=0, help='K KNN')
     parser.add_argument('--ntokens', type=int, default=0, help='Number of tokens')
-    parser.add_argument('--maxepochs', type=int, default=3000, help='Max iterations')
+    parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     # parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
     parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto'], help="Run a model don't have any differentiable parameters")
@@ -75,11 +77,11 @@ if __name__ == '__main__':
 
                 log = np.array(log)
                 maxidx = np.argmax(log, axis=0)
-                
+
                 stages = ['top1', 'many', 'medium', 'few']
                 for idx, stage in zip(maxidx[1:], stages):
                     print(f'Tau for Top {stage}_acc \t| tau: {log[idx][0]:.3f} | all: {log[idx][1]:.2f} | many: {log[idx][2]:.2f} | medium: {log[idx][3]:.2f} | few: {log[idx][4]:.2f}')
-                
+
 
 
         else:
