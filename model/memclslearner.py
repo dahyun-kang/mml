@@ -15,7 +15,7 @@ from einops import rearrange, repeat
 from pytorch_lightning import LightningModule
 from torchmetrics.functional import accuracy
 
-from model.transformer import TransformerEncoderLayer
+from model.transformer import TransformerEncoderLayer, ResidualAttentionBlock
 
 import pdb
 
@@ -29,7 +29,6 @@ class MemClsLearner(LightningModule):
         # self.num_classes = dm.num_classes # please use self.dm.num_classes directly.
         self.backbone = self._init_backbone()
         self.dim = 512
-        self.nhead = 8
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
 
         self.count_correct = {'trn': 0.0, 'val': 0.0, 'tst': 0.0}
@@ -39,7 +38,9 @@ class MemClsLearner(LightningModule):
         self.memory_list = None
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
         factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
+
         '''
+        self.nhead = 8
         self.knnformer = TransformerEncoderLayer(d_model=self.dim,
                                                  nhead=self.nhead,
                                                  dim_feedforward=self.dim,
@@ -50,18 +51,19 @@ class MemClsLearner(LightningModule):
                                                  norm_first=True,
                                                  **factory_kwargs,
                                                  )
-        '''
         self.fc = nn.Sequential(
                           # nn.LayerNorm(self.dim, **factory_kwargs),
                           nn.Linear(self.dim, self.dim, **factory_kwargs),
-                          nn.ReLU(inplace=True),
-                          nn.Linear(self.dim, self.dim, **factory_kwargs),
+                          # nn.ReLU(inplace=True),
+                          # nn.Linear(self.dim, self.dim, **factory_kwargs),
                       )
         def eye(submodule):
             if isinstance(submodule, nn.Linear):
                 torch.nn.init.eye_(submodule.weight)
                 submodule.bias.data.fill_(0.00)
         self.fc.apply(eye)
+        '''
+        self.attn = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
 
         # self.generic_tokens = self._init_generic_tokens()
 
