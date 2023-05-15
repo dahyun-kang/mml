@@ -195,7 +195,7 @@ class MemClsLearner(LightningModule):
         self._load_memory_and_prototype()
 
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree naiveproto --eval --nowandb
-    def forward_naive_protomatching(self, x, y):
+    def forward_naive_protomatching(self, x, y, stage=None):
         out = self.backbone(x)
 
         if self.args.dataset != 'imagenet100':
@@ -215,7 +215,7 @@ class MemClsLearner(LightningModule):
         return sim
 
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree nakata22 --k 1 --eval --nowandb
-    def forward_nakata22(self, x, y):
+    def forward_nakata22(self, x, y, stage=None):
         out = self.backbone(x)
 
         if self.args.dataset != 'imagenet100':
