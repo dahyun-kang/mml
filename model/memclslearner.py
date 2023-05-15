@@ -26,7 +26,6 @@ class MemClsLearner(LightningModule):
 
         self.args = args
         self.dm = dm
-        # self.num_classes = dm.num_classes # please use self.dm.num_classes directly.
         self.backbone = self._init_backbone()
         self.dim = 512
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
@@ -35,34 +34,9 @@ class MemClsLearner(LightningModule):
         self.count_all = {'trn': 0.0, 'val': 0.0, 'tst': 0.0}
         self.loss_all = {'trn': [], 'val': [], 'tst': []}
 
-        self.memory_list = None
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
         factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
 
-        '''
-        self.nhead = 8
-        self.knnformer = TransformerEncoderLayer(d_model=self.dim,
-                                                 nhead=self.nhead,
-                                                 dim_feedforward=self.dim,
-                                                 dropout=0.0,
-                                                 # activation=F.relu,
-                                                 layer_norm_eps=1e-05,
-                                                 batch_first=True,
-                                                 norm_first=True,
-                                                 **factory_kwargs,
-                                                 )
-        self.fc = nn.Sequential(
-                          # nn.LayerNorm(self.dim, **factory_kwargs),
-                          nn.Linear(self.dim, self.dim, **factory_kwargs),
-                          # nn.ReLU(inplace=True),
-                          # nn.Linear(self.dim, self.dim, **factory_kwargs),
-                      )
-        def eye(submodule):
-            if isinstance(submodule, nn.Linear):
-                torch.nn.init.eye_(submodule.weight)
-                submodule.bias.data.fill_(0.00)
-        self.fc.apply(eye)
-        '''
         self.attn = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
 
         # self.generic_tokens = self._init_generic_tokens()
@@ -252,19 +226,76 @@ class MemClsLearner(LightningModule):
 
         return sim
 
-    # def forward_protofcmatching(self, x, y):
-    def forward(self, x, y, stage):
+    def forward_pb5_protomatching(self, x, y, stage):
         out = self.backbone(x)
-        out = self.fc(out)
+        out = self.attn(out.unsqueeze(1), out.unsqueeze(1), out.unsqueeze(1)).squeeze(1)
 
-        if self.args.dataset != 'imagenet100':
-            raise NotImplementedError
+        proto = self.img_proto[stage]
+        proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
 
+        sim = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
+        return sim
+
+    def forward_p1_textknn_featupdate(self, x, y, stage):
+        out = self.backbone(x)
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, n d -> b n', out, self.txt_embed[stage])
+            _, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+
+            # N, D [[B, K] -> B, K, D
+            knnemb = self.txt_embed[stage][indices]
+
+            # B, 1, D
+            tr_q = out.unsqueeze(1)
+
+            # (B, 1, D), (B, K, D) -> B, (1 + K), D
+            kv = torch.cat([tr_q, knnemb], dim=1)
+
+        out = self.attn(tr_q, kv, kv).squeeze(1)
+
+        proto = self.img_proto[stage]
+        proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
+
+        sim = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
+        return sim
+
+    def forward_p2_textknn_parrellel_logitupdate(self, x, y, stage):
+        clipfeat = self.backbone(x)
+
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, n d -> b n', clipfeat, self.txt_embed[stage])
+            _, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+
+            # N, D [[B, K] -> B, K, D
+            knnemb = self.txt_embed[stage][indices]
+
+            # B, 1, D
+            tr_q = clipfeat.unsqueeze(1)
+
+            # (B, 1, D), (B, K, D) -> B, (1 + K), D
+            kv = torch.cat([tr_q, knnemb], dim=1)
+
+        out = self.attn(tr_q, kv, kv).squeeze(1)
         proto = self.img_proto[stage]
 
         proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
         out_ = F.normalize(out, dim=-1, p=2)
-        sim = torch.einsum('c d, b d -> b c', proto_, out_)
+        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
+
+        sim_clip = torch.einsum('c d, b d -> b c', proto_, clipfeat_)
+        sim_text = torch.einsum('c d, b d -> b c', proto_, out_)
+
+        # logit fusion  # use clamp to prevent unstability instead of adding 1e-6
+        sim = F.log_softmax(0.5 * (sim_clip + sim_text) * self.args.multemp + 1e-6, dim=-1)
+
+        # pb5: wrong
+        # sim = 0.5 * (F.softmax(sim_clip, dim=-1) + F.softmax(sim_text, dim=-1)) * self.args.multemp + 1e-6
+        # pb5: crprobfusion : wrong
+        # sim = 0.5 * (F.softmax(sim_clip * self.args.multemp, dim=-1) + F.softmax(sim_text * self.args.multemp, dim=-1)) + 1e-6
+        # pb5: crprobfusion
+        # sim = torch.log((0.5 * F.softmax(sim_clip * self.args.multemp, dim=-1) + 0.5 * F.softmax(sim_text * self.args.multemp, dim=-1)) + 1e-6)
         return sim
 
     def record_metrics(self, count_correct_batch, count_all_batch, loss, stage):

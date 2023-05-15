@@ -1,3 +1,26 @@
+    self.nhead = 8
+    self.knnformer = TransformerEncoderLayer(d_model=self.dim,
+                                                nhead=self.nhead,
+                                                dim_feedforward=self.dim,
+                                                dropout=0.0,
+                                                # activation=F.relu,
+                                                layer_norm_eps=1e-05,
+                                                batch_first=True,
+                                                norm_first=True,
+                                                **factory_kwargs,
+                                                )
+    self.fc = nn.Sequential(
+                        # nn.LayerNorm(self.dim, **factory_kwargs),
+                        nn.Linear(self.dim, self.dim, **factory_kwargs),
+                        # nn.ReLU(inplace=True),
+                        # nn.Linear(self.dim, self.dim, **factory_kwargs),
+                    )
+    def eye(submodule):
+        if isinstance(submodule, nn.Linear):
+            torch.nn.init.eye_(submodule.weight)
+            submodule.bias.data.fill_(0.00)
+    self.fc.apply(eye)
+
     def _init_irregular_memory_list(self):
         '''
         Return an irregular memory list of image features with different number for each class
@@ -785,3 +808,20 @@
         out = x - x.mean(dim=dim, keepdim=True)
         out = out / (out.std(dim=dim, keepdim=True) + eps)
         return out
+
+    def forward_gtoken(self, x, y, stage):
+        out = self.backbone(x)
+
+        # gtokens = F.normalize(self.generic_tokens, dim=-1, p=2).repeat(x.shape[0], 1, 1)
+        gtokens = self.generic_tokens.repeat(x.shape[0], 1, 1)
+        kv = torch.cat([out.unsqueeze(1), gtokens], dim=1)
+        # kv = gtokens
+
+        out = self.attn(out.unsqueeze(1), kv, kv).squeeze(1)
+
+        proto = self.img_proto[stage]
+        proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
+
+        sim = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
+        return sim
