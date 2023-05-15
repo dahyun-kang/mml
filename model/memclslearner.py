@@ -118,46 +118,54 @@ class MemClsLearner(LightningModule):
         return generic_tokens
 
     def _load_memory_and_prototype(self):
-        with torch.no_grad():
-            memory_dict = dict()
-            self.img_embed = {'trn': None, 'val': None, 'tst': None}
-            self.img_label = {'trn': None, 'val': None, 'tst': None}
-            self.img_proto = {'trn': None, 'val': None, 'tst': None}
-            for split, loader in zip(['trn', 'val', 'tst'],
-                                     [self.dm.train_memory_dataloader,
-                                      self.dm.val_memory_dataloader,
-                                      self.dm.test_memory_dataloader]):
-                img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
-                img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
+        self.img_embed = {'trn': None, 'val': None, 'tst': None}
+        self.img_label = {'trn': None, 'val': None, 'tst': None}
+        self.img_proto = {'trn': None, 'val': None, 'tst': None}
+        self.txt_embed = {'trn': None, 'val': None, 'tst': None}
+        self.txt_label = {'trn': None, 'val': None, 'tst': None}
 
-                if osp.exists(img_embed_path):
-                    print(f'\n *** [{split}] loading embed/label checkpoints from {self.cachedir}. *** \n')
-                    img_embed = torch.load(img_embed_path)
-                    img_label = torch.load(img_label_path)
-                else:
-                    print(f'\n *** [{split}] embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n')
-                    if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
-                    img_embed, img_label = self._init_memory(loader, split)
-                    torch.save(img_embed, img_embed_path)
-                    torch.save(img_label, img_label_path)
+        for split, img_loader, txt_loader in \
+                zip(['trn', 'val', 'tst'],
+                    [self.dm.train_memory_dataloader,
+                        self.dm.val_memory_dataloader,
+                        self.dm.test_memory_dataloader],
+                    [self.dm.train_text_dataloader,
+                        self.dm.val_text_dataloader,
+                        self.dm.test_text_dataloader]):
+            img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
+            img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
+            txt_embed_path = osp.join(self.cachedir, f'{split}_txt_embed.pth')
+            txt_label_path = osp.join(self.cachedir, f'{split}_txt_label.pth')
 
-                img_label_idx = img_label.unique().sort()[0]
-                img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
-                img_proto = torch.stack(img_proto, dim=0)  # C, D
+            if osp.exists(img_embed_path):
+                print(f'\n *** [{split}] loading embed/label checkpoints from {self.cachedir}. *** \n')
+                img_embed = torch.load(img_embed_path) ; img_label = torch.load(img_label_path)
+                txt_embed = torch.load(txt_embed_path) ; txt_label = torch.load(txt_label_path)
+            else:
+                print(f'\n *** [{split}] embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n')
+                if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
+                img_embed, img_label = self._init_memory(img_loader, split, modality='img')
+                txt_embed, txt_label = self._init_memory(txt_loader, split, modality='txt')
+                torch.save(img_embed, img_embed_path) ; torch.save(img_label, img_label_path)
+                torch.save(txt_embed, txt_embed_path) ; torch.save(txt_label, txt_label_path)
 
-                self.img_embed[split] = img_embed
-                self.img_label[split] = img_label
-                self.img_proto[split] = img_proto
+            img_label_idx = img_label.unique().sort()[0]
+            img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
+            img_proto = torch.stack(img_proto, dim=0)  # C, D
 
-                num_samples = int(img_embed.shape[0]) // (int(max(img_label))+1)
-                print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
+            self.img_embed[split] = img_embed ; self.img_label[split] = img_label
+            self.txt_embed[split] = txt_embed ; self.txt_label[split] = txt_label
+            self.img_proto[split] = img_proto
 
-            trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
-            self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
+            num_samples = int(img_embed.shape[0]) // (int(max(img_label)) + 1)
+            print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
 
-    def _init_memory(self, loader, split):
+        trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
+        self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
+
+    def _init_memory(self, loader, split, modality):
         '''
-        Return an irregular memory list of image features with different number for each class
+        Return an irregular memory list of image/text features with different number for each class
         '''
         backbone = self.backbone.to(self.device)
         backbone.eval()
@@ -165,9 +173,12 @@ class MemClsLearner(LightningModule):
         label_list = []
 
         with torch.inference_mode():
-            for x, y in tqdm(loader(), desc=f'Generating {split} emb'):
+            for x, y in tqdm(loader(), desc=f'Generating {modality} {split} emb'):
                 x = x.to(self.device)
-                out = backbone(x)
+                if modality == 'img':
+                    out = backbone(x)  # = backbone.encode_image(x)
+                elif modality == 'txt':
+                    out = backbone.encode_text(x)
                 embed_list.append(out)
                 label_list.append(y)
 
