@@ -57,7 +57,7 @@ class Transforms:
             torchvision.transforms.ToTensor(),
             torchvision.transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
         ])
-    
+
     @staticmethod
     def LT_train_transform(imgsize):
         return torchvision.transforms.Compose(
@@ -278,23 +278,23 @@ class LT_Dataset(Dataset):
             for line in f:
                 self.img_path.append(os.path.join(root, line.split()[0]))
                 self.targets.append(int(line.split()[1]))
-        
+
     def __len__(self):
         return len(self.targets)
-        
+
     def __getitem__(self, index):
 
         path = self.img_path[index]
         label = self.targets[index]
-        
+
         with open(path, 'rb') as f:
             sample = Image.open(f).convert('RGB')
-        
+
         if self.transform is not None:
             sample = self.transform(sample)
 
         return sample, label
-    
+
 class ImageNet_LT_DataModule(AbstractDataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -315,7 +315,7 @@ class ImageNet_LT_DataModule(AbstractDataModule):
     @property
     def num_classes(self) -> int:
         return 1000
-    
+
 class Places_LT_DataModule(AbstractDataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -377,7 +377,7 @@ Parameters
         maximum number of samples of classes.
         you can control the number of smaples of classes with this argument.
     * transform
-        just transform 
+        just transform
 
 Attribute (may someone needed....)
 -------
@@ -394,11 +394,11 @@ Attribute (may someone needed....)
         number of sentences of each classes. same as #_sentences
 """
 class ImageNet100_Dataset(Dataset):
-    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False):
+    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False, memory_split=1000, total_samples=1300):
         self.root = root
 
-        self.memory_split = 1000 # query : [0 ~ self.memory_split -1], memory : [self.memory_split ~ self.total_samples -1]
-        self.total_samples = 1300
+        self.memory_split = memory_split # 1000 # query : [0 ~ self.memory_split -1], memory : [self.memory_split ~ self.total_samples -1]
+        self.total_samples = total_samples # 1300
 
         self.sub_dirs = sub_dirs # choose in ['train.X1', 'train.X2', 'train.X3', 'train.X4', 'val.X']
         self.sub_idxs = [sorted(os.listdir(os.path.join(self.root, subdir))) for subdir in self.sub_dirs]
@@ -442,23 +442,23 @@ class ImageNet100_Dataset(Dataset):
         # sentence token generator
         self.text_tokens = self._make_sentence_tokens(label_mapping_file, wiki_dir)
         self.num_sents = [token.shape[0] for token in self.text_tokens]
-        
+
     def __len__(self):
         return len(self.targets)
-        
+
     def __getitem__(self, index):
 
         path = self.img_path[index]
         label = self.targets[index]
-        
+
         with open(path, 'rb') as f:
             sample = Image.open(f).convert('RGB')
-        
+
         if self.transform is not None:
             sample = self.transform(sample)
 
         return sample, label
-    
+
     def _label_generator(self, root, txt):
         if txt != '' and os.path.exists(os.path.join(root, txt)):
             print(f'Label file exist : {os.path.join(root, txt)}')
@@ -489,10 +489,10 @@ class TextToken_Dataset(Dataset):
 
         targets = [[idx]*nsents for idx, nsents in enumerate(num_sents)]
         for t in targets: self.targets += t
-        
+
     def __len__(self):
         return len(self.targets)
-        
+
     def __getitem__(self, index):
         sample = self.data[index]
         label = self.targets[index]
@@ -503,37 +503,51 @@ class ImageNet100DataModule(AbstractDataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
-        
+
         self.max_classes = None
         self.max_qeury_num_samples = 1000
+        self.dataset_root = 'imagenet100'
+        self.memory_split = 1000
+        self.total_samples = 1300
+        self.train_subdirs = ['train.X1', 'train.X3', 'train.X4']
+        self.val_subdirs = ['train.X2']
+        self.test_subdirs = ['train.X2']
 
     def setup(self, stage: str):
-        root = os.path.join(self.hparams.datadir, 'imagenet100')
+        root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
         wiki_dir = 'wiki'
 
-        self.dataset_train = self.dataset(root, train=True, sub_dirs=['train.X1'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False)
-        self.dataset_val = self.dataset(root, train=True, sub_dirs=['train.X2'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False)
-        self.dataset_test = self.dataset(root, train=True, sub_dirs=['train.X3', 'train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False)
-        
-        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=['train.X1'], label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True)
-        self.dataset_val_memory = self.dataset(root, train=True, sub_dirs=['train.X2'], label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True)
-        self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=['train.X3', 'train.X4'], label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir, 
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True)
+        self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
+        self.dataset_val = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
+        self.dataset_test = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
 
-        self.dataset_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
+        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, memory_split=self.memory_split, total_samples=self.total_samples)
+        self.dataset_val_memory = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, memory_split=self.memory_split, total_samples=self.total_samples)
+        self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, memory_split=self.memory_split, total_samples=self.total_samples)
+
+        self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
+        self.dataset_val_text = TextToken_Dataset(self.dataset_val.text_tokens, self.dataset_val.num_sents)
+        self.dataset_test_text = TextToken_Dataset(self.dataset_test.text_tokens, self.dataset_test.num_sents)
 
     def test_dataloader(self):
         return DataLoader(self.dataset_test, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
-    def text_dataloader(self):
-        return DataLoader(self.dataset_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-    
+    def train_text_dataloader(self):
+        return DataLoader(self.dataset_train_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+
+    def val_text_dataloader(self):
+        return DataLoader(self.dataset_val_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+
+    def test_text_dataloader(self):
+        return DataLoader(self.dataset_test_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+
     def train_memory_dataloader(self):
         return DataLoader(self.dataset_train_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
     def val_memory_dataloader(self):
@@ -545,6 +559,32 @@ class ImageNet100DataModule(AbstractDataModule):
     def num_classes(self) -> int:
         return self.dataset_train.num_classes
 
+
+class ImageNet1000DataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 700
+        self.dataset_root = 'imagenet-mini'
+        self.memory_split = 700
+        self.total_samples = 1000
+
+
+class ImageNet130samplesDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 100
+        self.dataset_root = 'ILSVRC_130samples'
+        self.memory_split = 100
+        self.total_samples = 130
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
+
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
@@ -555,7 +595,9 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'stl10': STL10DataModule,
                     'imagenetLT': ImageNet_LT_DataModule,
                     'placesLT': Places_LT_DataModule,
-                    'imagenet100' : ImageNet100DataModule
+                    'imagenet100' : ImageNet100DataModule,
+                    'imagenetmini' : ImageNet1000DataModule,
+                    'imagenet130samples' : ImageNet130samplesDataModule,
                     }
 
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
