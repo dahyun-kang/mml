@@ -172,8 +172,6 @@ class MemClsLearner(LightningModule):
     def forward_naive_protomatching(self, x, y, stage=None):
         out = self.backbone(x)
 
-        if self.args.dataset != 'imagenet100':
-            raise NotImplementedError
         assert self.args.eval, "This method can't be learned"
 
         proto = self.img_proto['tst'].to(x.device)
@@ -192,8 +190,6 @@ class MemClsLearner(LightningModule):
     def forward_nakata22(self, x, y, stage=None):
         out = self.backbone(x)
 
-        if self.args.dataset != 'imagenet100':
-            raise NotImplementedError
         assert self.args.eval, "This method can't be learned"
 
         memory = self.img_embed['tst'].to(x.device)
@@ -226,7 +222,7 @@ class MemClsLearner(LightningModule):
 
         return sim
 
-    def forward_pb5_protomatching(self, x, y, stage):
+    def forward_pb2_protomatching(self, x, y, stage):
         out = self.backbone(x)
         out = self.attn(out.unsqueeze(1), out.unsqueeze(1), out.unsqueeze(1)).squeeze(1)
 
@@ -287,8 +283,8 @@ class MemClsLearner(LightningModule):
         sim_clip = torch.einsum('c d, b d -> b c', proto_, clipfeat_)
         sim_text = torch.einsum('c d, b d -> b c', proto_, out_)
 
-        # logit fusion  # use clamp to prevent unstability instead of adding 1e-6
-        sim = F.log_softmax(0.5 * (sim_clip + sim_text) * self.args.multemp + 1e-6, dim=-1)
+        # logit fusion
+        sim = 0.5 * (sim_clip + sim_text) * self.args.multemp
 
         # pb5: wrong
         # sim = 0.5 * (F.softmax(sim_clip, dim=-1) + F.softmax(sim_text, dim=-1)) * self.args.multemp + 1e-6
