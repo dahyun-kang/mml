@@ -38,6 +38,7 @@ class MemClsLearner(LightningModule):
         factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
 
         self.attn = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
+        self.loss_fn = nn.CrossEntropyLoss()
 
         # self.generic_tokens = self._init_generic_tokens()
 
@@ -290,18 +291,19 @@ class MemClsLearner(LightningModule):
         out_ = F.normalize(out, dim=-1, p=2)
         clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
 
-        sim_clip = torch.einsum('c d, b d -> b c', proto_, clipfeat_)
-        sim_text = torch.einsum('c d, b d -> b c', proto_, out_)
+        sim_clip = torch.einsum('c d, b d -> b c', proto_, clipfeat_) * self.args.multemp
+        sim_text = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
 
-        # logit fusion
-        sim = 0.5 * (sim_clip + sim_text) * self.args.multemp
+        # p2: logit fusion
+        # sim = 0.5 * (sim_clip + sim_text) * self.args.multemp
 
-        # pb5: wrong
-        # sim = 0.5 * (F.softmax(sim_clip, dim=-1) + F.softmax(sim_text, dim=-1)) * self.args.multemp + 1e-6
-        # pb5: crprobfusion : wrong
-        # sim = 0.5 * (F.softmax(sim_clip * self.args.multemp, dim=-1) + F.softmax(sim_text * self.args.multemp, dim=-1)) + 1e-6
-        # pb5: crprobfusion
-        # sim = torch.log((0.5 * F.softmax(sim_clip * self.args.multemp, dim=-1) + 0.5 * F.softmax(sim_text * self.args.multemp, dim=-1)) + 1e-6)
+        # p3: prob fusion
+        # Be AWARE of using either
+        #     1) F.cross_entropy(unnormalized_tensor)
+        #     2) F.nll_loss(torch.log(F.softmax(unnormalized_tensor)))
+        sim = torch.log((0.5 * F.softmax(sim_clip, dim=-1) + 0.5 * F.softmax(sim_text, dim=-1)) + 1e-6)
+        self.loss_fn = nn.NLLLoss()  # only comes with log_softmax
+
         return sim
 
     def record_metrics(self, count_correct_batch, count_all_batch, loss, stage):
@@ -321,7 +323,7 @@ class MemClsLearner(LightningModule):
         self.backbone.eval()
         x, y = batch
         logits = self(x, y, stage=stage)
-        loss = F.cross_entropy(logits, y)
+        loss = self.loss_fn(logits, y)
 
         with torch.no_grad():
             preds = torch.argmax(logits, dim=1)
