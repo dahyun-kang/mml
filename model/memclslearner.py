@@ -170,7 +170,8 @@ class MemClsLearner(LightningModule):
 
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree naiveproto --eval --nowandb
     def forward_naive_protomatching(self, x, y, stage=None):
-        out = self.backbone(x)
+        with torch.no_grad():
+            out = self.backbone(x)
 
         assert self.args.eval, "This method can't be learned"
 
@@ -188,7 +189,8 @@ class MemClsLearner(LightningModule):
 
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree nakata22 --k 1 --eval --nowandb
     def forward_nakata22(self, x, y, stage=None):
-        out = self.backbone(x)
+        with torch.no_grad():
+            out = self.backbone(x)
 
         assert self.args.eval, "This method can't be learned"
 
@@ -224,7 +226,9 @@ class MemClsLearner(LightningModule):
 
     # main.py --datapath /home/dahyun/datasets --dataset imagenet130samples --backbone clipvitb --logpath yourlog --lr 5e-5 --wd 1e-2 --k 0 --multemp 32
     def forward_pb2_protomatching(self, x, y, stage):
-        out = self.backbone(x)
+        with torch.no_grad():
+            out = self.backbone(x)
+
         out = self.attn(out.unsqueeze(1), out.unsqueeze(1), out.unsqueeze(1)).squeeze(1)
 
         proto = self.img_proto[stage]
@@ -236,7 +240,9 @@ class MemClsLearner(LightningModule):
 
     # main.py --datapath /home/dahyun/datasets --dataset imagenet130samples --backbone clipvitb --logpath yourlog --lr 5e-5 --wd 1e-2 --k 16 --multemp 32
     def forward_p1_textknn_featupdate(self, x, y, stage):
-        out = self.backbone(x)
+        with torch.no_grad():
+            out = self.backbone(x)
+
         with torch.no_grad():
             classwise_sim = torch.einsum('b d, n d -> b n', out, self.txt_embed[stage])
             _, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
@@ -261,7 +267,8 @@ class MemClsLearner(LightningModule):
 
     # main.py --datapath /home/dahyun/datasets --dataset imagenet130samples --backbone clipvitb --logpath yourlog --lr 5e-5 --wd 1e-2 --k 16 --multemp 32
     def forward_p2_textknn_parrellel_logitupdate(self, x, y, stage):
-        clipfeat = self.backbone(x)
+        with torch.no_grad():
+            clipfeat = self.backbone(x)
 
         with torch.no_grad():
             classwise_sim = torch.einsum('b d, n d -> b n', clipfeat, self.txt_embed[stage])
