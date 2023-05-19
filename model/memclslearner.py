@@ -178,12 +178,9 @@ class MemClsLearner(LightningModule):
 
         proto = self.img_proto['tst'].to(x.device)
 
-        out_ = out
-        proto_ = proto
-
         # l2_norm
-        # out_ = F.normalize(out, dim=-1, p=2)
-        # proto_ = F.normalize(proto, dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
+        proto_ = F.normalize(proto, dim=-1, p=2)
 
         sim = torch.einsum('c d, b d -> b c', proto_, out_) # * 0.001
         return sim
@@ -199,12 +196,9 @@ class MemClsLearner(LightningModule):
         labels = self.img_label['tst']
         num_cls = max(labels)+1
 
-        out_ = out
-        memory_ = memory
-
         # l2_norm
-        # out_ = F.normalize(out, dim=-1, p=2)
-        # memory_ = F.normalize(memory, dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
+        memory_ = F.normalize(memory, dim=-1, p=2)
 
         globalsim = torch.einsum('b d, n d -> b n', out_, memory_)
         _, indices = globalsim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
