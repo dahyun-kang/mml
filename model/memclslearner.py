@@ -261,7 +261,7 @@ class MemClsLearner(LightningModule):
         return sim
 
     # main.py --datapath /home/dahyun/datasets --dataset imagenet130samples --backbone clipvitb --logpath yourlog --lr 5e-5 --wd 1e-2 --k 16 --multemp 32
-    def forward_p2_textknn_parrellel_logitupdate(self, x, y, stage):
+    def forward_p3_textknn_parrellel_probfusion(self, x, y, stage):
         with torch.no_grad():
             clipfeat = self.backbone(x)
 
