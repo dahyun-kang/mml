@@ -37,7 +37,9 @@ class MemClsLearner(LightningModule):
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
         factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
 
-        self.attn = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
+        # self.attn = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
+        self.attn_txt = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
+        self.attn_img = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.loss_fn = nn.CrossEntropyLoss()
 
         # self.generic_tokens = self._init_generic_tokens()
@@ -98,6 +100,7 @@ class MemClsLearner(LightningModule):
         self.img_proto = {'trn': None, 'val': None, 'tst': None}
         self.txt_embed = {'trn': None, 'val': None, 'tst': None}
         self.txt_label = {'trn': None, 'val': None, 'tst': None}
+        self.txt_proto = {'trn': None, 'val': None, 'tst': None}
 
         for split, img_loader, txt_loader in \
                 zip(['trn', 'val', 'tst'],
@@ -128,9 +131,13 @@ class MemClsLearner(LightningModule):
             img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
             img_proto = torch.stack(img_proto, dim=0)  # C, D
 
-            self.img_embed[split] = img_embed ; self.img_label[split] = img_label
-            self.txt_embed[split] = txt_embed ; self.txt_label[split] = txt_label
-            self.img_proto[split] = img_proto
+            txt_label_idx = txt_label.unique().sort()[0]
+            txt_proto = [txt_embed[txt_label == c].mean(dim=0) for c in txt_label_idx]
+            txt_proto = torch.stack(txt_proto, dim=0)  # C, D
+
+            self.img_embed[split] = img_embed ; self.txt_embed[split] = txt_embed
+            self.img_label[split] = img_label ; self.txt_label[split] = txt_label
+            self.img_proto[split] = img_proto ; self.txt_proto[split] = txt_proto
 
             num_samples = int(img_embed.shape[0]) // (int(max(img_label)) + 1)
             print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
@@ -296,6 +303,52 @@ class MemClsLearner(LightningModule):
         #     1) F.cross_entropy(unnormalized_tensor)
         #     2) F.nll_loss(torch.log(F.softmax(unnormalized_tensor)))
         sim = torch.log((0.5 * F.softmax(sim_clip, dim=-1) + 0.5 * F.softmax(sim_text, dim=-1)) + 1e-6)
+        self.loss_fn = nn.NLLLoss()  # only comes with log_softmax
+
+        return sim
+
+    def forward_p15_crossmodal_self_imgknn_textknn_probfusion(self, x, y, stage):
+        def retrieve_knn(x, mem, k):
+            with torch.no_grad():
+                classwise_sim = torch.einsum('b d, n d -> b n', x, mem)
+                _, indices = classwise_sim.topk(k=k, dim=-1, largest=True, sorted=True)
+
+                # N, D [[B, K] -> B, K, D
+                knnemb = mem[indices]
+                # return knnemb
+
+                # (B, 1, D), (B, K, D) -> B, (1 + K), D
+                knnemb = torch.cat([x.unsqueeze(1), knnemb], dim=1)
+                return knnemb
+
+        with torch.no_grad():
+            clipfeat = self.backbone(x)
+
+        kv_txt = retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.k)
+        kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.k)
+
+        out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1)
+        out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1)
+
+        out_txt_ = F.normalize(out_txt, dim=-1, p=2, eps=1e-8)
+        out_img_ = F.normalize(out_img, dim=-1, p=2, eps=1e-8)
+        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2, eps=1e-8)
+        proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2, eps=1e-8)
+        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2, eps=1e-8)
+
+        sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 32.
+        sim_txt = torch.einsum('c d, b d -> b c', proto_img_, out_txt_) * self.args.multemp
+        sim_img = torch.einsum('c d, b d -> b c', proto_txt_, out_img_) * self.args.multemp
+
+        # p2: logit fusion
+        # sim = 0.5 * (sim_clip + sim_text) * self.args.multemp
+
+        # p3: prob fusion
+        # Be AWARE of using either
+        #     1) F.cross_entropy(unnormalized_tensor)
+        #     2) F.nll_loss(torch.log(F.softmax(unnormalized_tensor)))
+        sim_avg = (F.softmax(sim_clip, dim=-1) + F.softmax(sim_txt, dim=-1) + F.softmax(sim_img, dim=-1)) / 3.
+        sim = torch.log(sim_avg + 1e-6)
         self.loss_fn = nn.NLLLoss()  # only comes with log_softmax
 
         return sim
