@@ -5,13 +5,17 @@ imagenet1K (ILSVRC) subset generator
     here $dataroot is the root for ILSVRC such as /ssd1t/datasets
 2) adjust num_samples in L23
 3) python ILSVRC_subset_generator.py
-
 '''
 
 
 import os
 import os.path as osp
+import random
 import shutil
+
+seed = 7
+random.seed(seed)
+os.environ["PYTHONHASHSEED"] = str(seed)
 
 def force_symlink(file1, file2):
     try:
@@ -35,6 +39,9 @@ output_val_path = osp.join(output_path_root, 'val')
 
 ## symlinking train
 class_dir = os.listdir(train_path)
+class_dir.sort()
+random.shuffle(class_dir)  # shuffle class dir with a fixed rand seed
+
 min, max = 999999, 0
 for i, class_i in enumerate(class_dir):
 
