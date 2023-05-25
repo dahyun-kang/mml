@@ -307,7 +307,7 @@ class MemClsLearner(LightningModule):
 
         return sim
 
-    def forward_p15_crossmodal_self_imgknn_textknn_probfusion(self, x, y, stage):
+    def forward_p15_1_crossmodal_self_imgknn_textknn_probfusion_nokvinput(self, x, y, stage):
         def retrieve_knn(x, mem, k):
             with torch.no_grad():
                 classwise_sim = torch.einsum('b d, n d -> b n', x, mem)
@@ -315,10 +315,6 @@ class MemClsLearner(LightningModule):
 
                 # N, D [[B, K] -> B, K, D
                 knnemb = mem[indices]
-                # return knnemb
-
-                # (B, 1, D), (B, K, D) -> B, (1 + K), D
-                knnemb = torch.cat([x.unsqueeze(1), knnemb], dim=1)
                 return knnemb
 
         with torch.no_grad():
