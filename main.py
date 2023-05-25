@@ -118,9 +118,9 @@ if __name__ == '__main__':
         #     model.forward = model.forward_nakata22
         if args.runfree:
             if args.runfree == 'nakata22':
-                model.forward = model.forward_nakata22
+                model.learner.forward = model.learner.forward_nakata22
             elif args.runfree == 'naiveproto':
-                model.forward = model.forward_naive_protomatching
+                model.learner.forward = model.learner.forward_naive_protomatching
 
         trainer = Trainer(
             max_epochs=args.maxepochs,
