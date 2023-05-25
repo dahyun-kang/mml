@@ -6,7 +6,7 @@ import numpy as np
 from pytorch_lightning import LightningModule
 from torchmetrics.functional import accuracy
 
-from model.memclslearner import MemoryModularLearner
+from model.mmlearner import MemoryModularLearner
 
 import pdb
 
