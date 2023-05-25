@@ -229,11 +229,11 @@ class MemoryModularLearner(nn.Module):
         out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1)
         out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1)
 
-        out_txt_ = F.normalize(out_txt, dim=-1, p=2, eps=1e-8)
-        out_img_ = F.normalize(out_img, dim=-1, p=2, eps=1e-8)
-        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2, eps=1e-8)
-        proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2, eps=1e-8)
-        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2, eps=1e-8)
+        out_txt_ = F.normalize(out_txt, dim=-1, p=2)
+        out_img_ = F.normalize(out_img, dim=-1, p=2)
+        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
+        proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
+        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
 
         sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 32.
         sim_txt = torch.einsum('c d, b d -> b c', proto_img_, out_txt_) * self.args.multemp
