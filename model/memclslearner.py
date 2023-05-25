@@ -1,4 +1,4 @@
-""" Memory-based Classification Learner """
+""" Memory-Modular Learner """
 
 import os
 import os.path as osp
@@ -6,22 +6,17 @@ import clip
 from tqdm import tqdm
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-import numpy as np
-
-from torch import nn
-from einops import rearrange, repeat
-from pytorch_lightning import LightningModule
-from torchmetrics.functional import accuracy
 
 from model.transformer import TransformerEncoderLayer, ResidualAttentionBlock
 
 import pdb
 
 
-class MemClsLearner(LightningModule):
-    def __init__(self, args, dm):
+class MemoryModularLearner(nn.Module):
+    def __init__(self, args, dm, **factory_kwargs):
         super().__init__()
 
         self.args = args
@@ -30,12 +25,7 @@ class MemClsLearner(LightningModule):
         self.dim = 512
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
 
-        self.count_correct = {'trn': 0.0, 'val': 0.0, 'tst': 0.0}
-        self.count_all = {'trn': 0.0, 'val': 0.0, 'tst': 0.0}
-        self.loss_all = {'trn': [], 'val': [], 'tst': []}
-
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
-        factory_kwargs = {'device': self.device, 'dtype': self.modeldtype}
 
         # self.attn = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.attn_txt = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
@@ -170,12 +160,6 @@ class MemClsLearner(LightningModule):
         label_1d.requires_grad = False
         return embed_1d, label_1d
 
-    def on_fit_start(self):
-        self._load_memory_and_prototype()
-
-    def on_test_start(self):
-        self._load_memory_and_prototype()
-
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree naiveproto --eval --nowandb
     def forward_naive_protomatching(self, x, y, stage=None):
         with torch.no_grad():
@@ -267,105 +251,3 @@ class MemClsLearner(LightningModule):
         self.loss_fn = nn.NLLLoss()  # only comes with log_softmax
 
         return sim
-
-    def record_metrics(self, count_correct_batch, count_all_batch, loss, stage):
-        self.count_correct[stage] += count_correct_batch
-        self.count_all[stage] += count_all_batch
-        self.loss_all[stage].append(loss)
-
-        if self.args.LT:
-            raise NotImplementedError('trn/val/tst split not considered')
-            correct = (preds == y).int()
-
-            for ans, lbl in zip(correct.tolist(), y.tolist()):
-                self.count_class_correct[lbl] += ans
-                self.count_class_valimgs[lbl] += 1
-
-    def each_step(self, batch, stage=None):
-        self.backbone.eval()
-        x, y = batch
-        logits = self(x, y, stage=stage)
-        loss = self.loss_fn(logits, y)
-
-        with torch.no_grad():
-            preds = torch.argmax(logits, dim=1)
-            acc = accuracy(preds, y) * 100.
-
-            count_correct = (preds == y).int().sum()
-            batchsize = int(y.shape[0])  # batchsize may vary as drop_last=False
-            self.record_metrics(count_correct, batchsize, loss, stage)
-
-        return {'loss': loss}
-
-    def training_step(self, batch, batch_idx):
-        return self.each_step(batch, stage='trn')
-
-    def validation_step(self, batch, batch_idx):
-        return self.each_step(batch, "val")
-
-    def test_step(self, batch, batch_idx):
-        return self.each_step(batch, "tst")
-
-    def each_epoch_end(self, stage):
-        epoch = self.trainer.current_epoch
-        epoch_loss = torch.stack(self.loss_all[stage]).mean()  # a bit inaccurate; drop_last=False
-        epoch_acc = self.count_correct[stage] / self.count_all[stage] * 100.
-
-        self.log(f'{stage}/loss', epoch_loss, on_epoch=True)
-        self.log(f'{stage}/acc', epoch_acc, on_epoch=True)
-
-        result = f'Epoch {epoch}: | {stage}/loss: {epoch_loss:.4f} | {stage}/acc: {epoch_acc:.2f}'
-
-        # re-initialize metric cache
-        self.count_correct[stage] = 0.
-        self.count_all[stage] = 0.
-        self.loss_all[stage] = []
-
-        if self.args.LT:
-            # You will come across self.count_class_correct undefined error. You can define it in the
-            # class initializer and re-initialize it in this function after use
-            raise NotImplementedError('trn/val acc compuation not implemented')
-            many_shot = []
-            medium_shot = []
-            few_shot = []
-
-            for c in range(self.dm.num_classes):
-                if self.train_class_count[c] > self.args.many_shot_thr:
-                    many_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-                elif self.train_class_count[c] < self.args.low_shot_thr:
-                    few_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-                else:
-                    medium_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-
-            if len(many_shot) == 0: many_shot.append(0)
-            if len(medium_shot) == 0: medium_shot.append(0)
-            if len(few_shot) == 0: few_shot.append(0)
-
-            result += f" | val_many: {np.mean(many_shot)*100.:.2f} | val_medium: {np.mean(medium_shot)*100.:.2f} | val_few: {np.mean(few_shot)*100.:.2f}"
-
-        result = "\n\n\n" + result + "\n"
-        print(result)
-
-    def on_train_epoch_end(self):
-        self.each_epoch_end(stage='trn')
-
-    def on_validation_epoch_end(self):
-        self.each_epoch_end(stage='val')
-
-    def on_test_epoch_end(self):
-        self.each_epoch_end(stage='tst')
-
-    def configure_optimizers(self):
-        param_list = []
-        for k, v in self.named_parameters():
-            if not 'backbone' in k:  # or 'ln' in k:
-                param_list.append(v)
-        optimizer = torch.optim.Adam(
-            param_list,
-            lr=self.args.lr,
-            # momentum=0.9,
-            weight_decay=self.args.wd,
-            eps=1e-6,
-        )
-
-        return {"optimizer": optimizer}

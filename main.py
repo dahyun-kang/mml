@@ -10,7 +10,7 @@ from pytorch_lightning.callbacks.progress import TQDMProgressBar
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from datamodule import return_datamodule
-from model.memclslearner import MemClsLearner
+from model.mmltrainer import MemoryModularLearnerTrainer
 from model.decoupled import Decoupled_learner
 from model.tau_normalize import tau_normalizer
 from callbacks import CustomCheckpoint
@@ -112,7 +112,7 @@ if __name__ == '__main__':
     else:
         checkpoint_callback = CustomCheckpoint(args)
         dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
-        model = MemClsLearner(args, dm=dm)
+        model = MemoryModularLearnerTrainer(args, dm=dm)
 
         # if args.nakata22:
         #     model.forward = model.forward_nakata22
@@ -141,7 +141,7 @@ if __name__ == '__main__':
 
         elif args.eval:
             modelpath = checkpoint_callback.modelpath
-            model = MemClsLearner.load_from_checkpoint(modelpath, args=args, dm=dm)
+            model = MemoryModularLearnerTrainer.load_from_checkpoint(modelpath, args=args, dm=dm)
             trainer.test(model=model, datamodule=dm)
         else:
             trainer.fit(model, dm)
