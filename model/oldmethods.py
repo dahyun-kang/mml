@@ -804,6 +804,87 @@
         avgprob = torch.clamp(avgprob, 1e-6)  # to prevent numerical unstability
         return torch.log(avgprob)
 
+    # main.py --datapath /home/dahyun/datasets --dataset imagenet130samples --backbone clipvitb --logpath yourlog --lr 5e-5 --wd 1e-2 --k 0 --multemp 32
+    def forward_pb2_protomatching(self, x, y, stage):
+        with torch.no_grad():
+            out = self.backbone(x)
+
+        out = self.attn(out.unsqueeze(1), out.unsqueeze(1), out.unsqueeze(1)).squeeze(1)
+
+        proto = self.img_proto[stage]
+        proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
+
+        sim = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
+        return sim
+
+    # main.py --datapath /home/dahyun/datasets --dataset imagenet130samples --backbone clipvitb --logpath yourlog --lr 5e-5 --wd 1e-2 --k 16 --multemp 32
+    def forward_p1_textknn_featupdate(self, x, y, stage):
+        with torch.no_grad():
+            out = self.backbone(x)
+
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, n d -> b n', out, self.txt_embed[stage])
+            _, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+
+            # N, D [[B, K] -> B, K, D
+            knnemb = self.txt_embed[stage][indices]
+
+            # B, 1, D
+            tr_q = out.unsqueeze(1)
+
+            # (B, 1, D), (B, K, D) -> B, (1 + K), D
+            kv = torch.cat([tr_q, knnemb], dim=1)
+
+        out = self.attn(tr_q, kv, kv).squeeze(1)
+
+        proto = self.img_proto[stage]
+        proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
+
+        sim = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
+        return sim
+
+    # main.py --datapath /home/dahyun/datasets --dataset imagenet130samples --backbone clipvitb --logpath yourlog --lr 5e-5 --wd 1e-2 --k 16 --multemp 32
+    def forward_p3_textknn_parrellel_probfusion(self, x, y, stage):
+        with torch.no_grad():
+            clipfeat = self.backbone(x)
+
+        with torch.no_grad():
+            classwise_sim = torch.einsum('b d, n d -> b n', clipfeat, self.txt_embed[stage])
+            _, indices = classwise_sim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+
+            # N, D [[B, K] -> B, K, D
+            knnemb = self.txt_embed[stage][indices]
+
+            # B, 1, D
+            tr_q = clipfeat.unsqueeze(1)
+
+            # (B, 1, D), (B, K, D) -> B, (1 + K), D
+            kv = torch.cat([tr_q, knnemb], dim=1)
+
+        out = self.attn(tr_q, kv, kv).squeeze(1)
+        proto = self.img_proto[stage]
+
+        proto_ = F.normalize(proto.to(x.device), dim=-1, p=2)
+        out_ = F.normalize(out, dim=-1, p=2)
+        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
+
+        sim_clip = torch.einsum('c d, b d -> b c', proto_, clipfeat_) * self.args.multemp
+        sim_text = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
+
+        # p2: logit fusion
+        # sim = 0.5 * (sim_clip + sim_text) * self.args.multemp
+
+        # p3: prob fusion
+        # Be AWARE of using either
+        #     1) F.cross_entropy(unnormalized_tensor)
+        #     2) F.nll_loss(torch.log(F.softmax(unnormalized_tensor)))
+        sim = torch.log((0.5 * F.softmax(sim_clip, dim=-1) + 0.5 * F.softmax(sim_text, dim=-1)) + 1e-6)
+        self.loss_fn = nn.NLLLoss()  # only comes with log_softmax
+
+        return sim
+
     def standardize(self, x, dim=1, eps=1e-6):
         out = x - x.mean(dim=dim, keepdim=True)
         out = out / (out.std(dim=dim, keepdim=True) + eps)
