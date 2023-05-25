@@ -139,14 +139,14 @@ class MemoryModularLearner(nn.Module):
         '''
         Return an irregular memory list of image/text features with different number for each class
         '''
-        backbone = self.backbone.to(self.device)
+        backbone = self.backbone.cuda()
         backbone.eval()
         embed_list = []
         label_list = []
 
         with torch.inference_mode():
             for x, y in tqdm(loader(), desc=f'Generating {modality} {split} emb'):
-                x = x.to(self.device)
+                x = x.cuda()
                 if modality == 'img':
                     out = backbone(x)  # = backbone.encode_image(x)
                 elif modality == 'txt':
