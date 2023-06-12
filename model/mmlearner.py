@@ -210,7 +210,7 @@ class MemoryModularLearner(nn.Module):
 
         return sim
 
-    def forward_p15_1_crossmodal_self_imgknn_textknn_probfusion_nokvinput(self, x, y, stage):
+    def forward_p19_1_crossmodal_self_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
         def retrieve_knn(x, mem, k):
             with torch.no_grad():
                 classwise_sim = torch.einsum('b d, n d -> b n', x, mem)
@@ -239,15 +239,6 @@ class MemoryModularLearner(nn.Module):
         sim_txt = torch.einsum('c d, b d -> b c', proto_img_, out_txt_) * self.args.multemp
         sim_img = torch.einsum('c d, b d -> b c', proto_txt_, out_img_) * self.args.multemp
 
-        # p2: logit fusion
-        # sim = 0.5 * (sim_clip + sim_text) * self.args.multemp
-
-        # p3: prob fusion
-        # Be AWARE of using either
-        #     1) F.cross_entropy(unnormalized_tensor)
-        #     2) F.nll_loss(torch.log(F.softmax(unnormalized_tensor)))
-        sim_avg = (F.softmax(sim_clip, dim=-1) + F.softmax(sim_txt, dim=-1) + F.softmax(sim_img, dim=-1)) / 3.
-        sim = torch.log(sim_avg + 1e-6)
-        self.loss_fn = nn.NLLLoss()  # only comes with log_softmax
+        sim = sim_clip + sim_txt + sim_img
 
         return sim
