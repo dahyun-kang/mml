@@ -235,7 +235,7 @@ class MemoryModularLearner(nn.Module):
         proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
         proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
 
-        sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 32.
+        sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 8.  # 32 with probfusion
         sim_txt = torch.einsum('c d, b d -> b c', proto_img_, out_txt_) * self.args.multemp
         sim_img = torch.einsum('c d, b d -> b c', proto_txt_, out_img_) * self.args.multemp
 
