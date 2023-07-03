@@ -431,7 +431,6 @@ class ImageNet100_Dataset(Dataset):
                 else:
                     num_samples_i = min(max_samples, len(imgdirs) - self.len_memory) if max_samples else len(imgdirs) - self.len_memory
                     imgdirs = imgdirs[:num_samples_i]
-                print(label_file, 'is memory:', is_memory, num_samples_i, len(imgdirs))
 
                 for imgdir in imgdirs:
                     target = idxs_cls[idx]
