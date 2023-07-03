@@ -394,11 +394,11 @@ Attribute (may someone needed....)
         number of sentences of each classes. same as #_sentences
 """
 class ImageNet100_Dataset(Dataset):
-    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False, memory_split=1000, total_samples=1300):
+    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False, len_memory=1000):
         self.root = root
 
-        self.memory_split = memory_split # 1000 # query : [0 ~ self.memory_split -1], memory : [self.memory_split ~ self.total_samples -1]
-        self.total_samples = total_samples # 1300
+        # memory_split cant handle variable query length. Let's fix the len of the memory and set the remainder as queries
+        self.len_memory = len_memory  # query : [0 ~ (-len_memory - 1 or max_samples)], memory : [len_memory ~ to the last elem]
 
         self.sub_dirs = sub_dirs # choose in ['train.X1', 'train.X2', 'train.X3', 'train.X4', 'val.X']
         self.sub_idxs = [sorted(os.listdir(os.path.join(self.root, subdir))) for subdir in self.sub_dirs]
@@ -411,8 +411,8 @@ class ImageNet100_Dataset(Dataset):
             self.loaded_idxs = self.loaded_idxs[:max_classes]
 
         self.num_classes = len(self.loaded_idxs)
-        # self.num_samples = max_samples if max_samples else 1300
-        self.num_samples = max_samples if max_samples else self.total_samples - self.memory_split if is_memory else self.memory_split
+        # deprecated to handle variable num of queries
+        # self.num_samples = max_samples if max_samples else self.total_samples - self.memory_split if is_memory else self.memory_split
 
         self.img_path = []
         self.targets = []
@@ -425,18 +425,24 @@ class ImageNet100_Dataset(Dataset):
                 if idx not in self.loaded_idxs: continue
 
                 imgdirs = sorted(os.listdir(os.path.join(root, self.sub_dirs[i], idx)))
-                imgdirs = imgdirs[self.memory_split:] if is_memory else imgdirs[:self.memory_split]
+                if is_memory:
+                    num_samples_i = self.len_memory
+                    imgdirs = imgdirs[-self.len_memory:]
+                else:
+                    num_samples_i = min(max_samples, len(imgdirs) - self.len_memory) if max_samples else len(imgdirs) - self.len_memory
+                    imgdirs = imgdirs[:num_samples_i]
+                print(label_file, 'is memory:', is_memory, num_samples_i, len(imgdirs))
 
                 for imgdir in imgdirs:
                     target = idxs_cls[idx]
-                    if num_samples_count[target] >= self.num_samples: continue
+                    if num_samples_count[target] >= num_samples_i: continue
 
                     self.img_path.append(os.path.join(root, self.sub_dirs[i], idx, imgdir))
                     self.targets.append(target)
 
                     num_samples_count[target] += 1
 
-        assert sum(num_samples_count) == self.num_samples * self.num_classes
+        # assert sum(num_samples_count) == self.num_samples * self.num_classes
         assert self.num_classes == max(self.targets) + 1
 
         # sentence token generator
@@ -505,10 +511,11 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset = ImageNet100_Dataset
 
         self.max_classes = None
-        self.max_qeury_num_samples = 1000
+        self.max_qeury_num_samples = 1100
         self.dataset_root = 'imagenet100'
-        self.memory_split = 1000
-        self.total_samples = 1300
+        # self.memory_split = 1000
+        self.len_memory = 200
+        # self.total_samples = 1300
         self.train_subdirs = ['train.X1', 'train.X3', 'train.X4']
         self.val_subdirs = ['train.X2']
         self.test_subdirs = ['train.X2']
@@ -519,18 +526,18 @@ class ImageNet100DataModule(AbstractDataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
         self.dataset_val = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
         self.dataset_test = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
 
         self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_memory=self.len_memory)
         self.dataset_val_memory = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
         self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
 
         self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
         self.dataset_val_text = TextToken_Dataset(self.dataset_val.text_tokens, self.dataset_val.num_sents)
@@ -578,11 +585,42 @@ class ImageNet130samplesDataModule(ImageNet100DataModule):
 
         self.max_qeury_num_samples = 100
         self.dataset_root = 'ILSVRC_130samples'
-        self.memory_split = 100
-        self.total_samples = 130
+        # self.memory_split = 100
+        self.len_memory = 30
+        # self.total_samples = 130  # to make it length-agnostic
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
+
+
+class ImageNet500samplesDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 300
+        self.dataset_root = 'ILSVRC_500samples'
+        # self.memory_split = 400
+        self.len_memory = 200
+        # self.total_samples = 500  # to make it length-agnostic
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
+
+class ImageNetFullsamplesDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 1100
+        self.dataset_root = 'ILSVRC_1300samples'
+        self.len_memory = 200
+        # self.total_samples = 1300  # to make it length-agnostic
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
 
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
@@ -598,6 +636,8 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'imagenet100' : ImageNet100DataModule,
                     'imagenetmini' : ImageNet1000DataModule,
                     'imagenet130samples' : ImageNet130samplesDataModule,
+                    'imagenet500samples' : ImageNet500samplesDataModule,
+                    'imagenetfullsamples' : ImageNetFullsamplesDataModule,
                     }
 
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
