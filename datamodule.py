@@ -633,13 +633,13 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
         self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=50, transform=self.val_transform, is_memory=False, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=None, max_samples=50, transform=self.val_transform, is_memory=False, len_memory=0)
         self.dataset_test = self.dataset_val
 
         self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, memory_split=self.memory_split, total_samples=self.total_samples)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_memory=self.len_memory)
         self.dataset_val_memory = self.dataset_train_memory
         self.dataset_test_memory = self.dataset_train_memory
 
