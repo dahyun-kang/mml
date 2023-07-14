@@ -647,6 +647,17 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         self.dataset_val_text = self.dataset_train_text
         self.dataset_test_text = self.dataset_train_text
 
+class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset_root = 'CUB_200_2011'
+        self.len_memory = 5 # each classes in dataset have 29~30 images each
+
+        self.train_subdirs = ['Train']
+        self.val_subdirs = ['Val']
+        self.test_subdirs = ['Val']
+
+
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     dataset_dict = {'cifar10': CIFAR10DataModule,
                     'cifar100': CIFAR100DataModule,
@@ -663,6 +674,7 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'imagenet130samples' : ImageNet130samplesDataModule,
                     'imagenet500samples' : ImageNet500samplesDataModule,
                     'imagenetfullsamples' : ImageNetFullsamplesDataModule,
+                    'cub2011standard' : Cub2011DataModule_Standard,
                     }
 
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
