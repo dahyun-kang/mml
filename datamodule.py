@@ -620,7 +620,9 @@ class ImageNetFullsamplesDataModule(ImageNet100DataModule):
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
 
+
 class ImageNet100DataModule_Standard(ImageNet100DataModule):
+    ''' seen classes '''
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.train_subdirs = ['train.X1', 'train.X2', 'train.X3', 'train.X4']
@@ -657,6 +659,77 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
         self.val_subdirs = ['Val']
         self.test_subdirs = ['Val']
 
+class ImageNet1Kclasses160samples(ImageNet100DataModule):
+    ''' seen classes '''
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.dataset = ImageNet100_Dataset
+
+        self.max_classes = None
+        self.max_qeury_num_samples = 100
+        self.dataset_root = 'ILSVRC_1Kclasses160samples'
+        self.len_memory = 30
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
+    def setup(self, stage: str):
+        root = os.path.join(self.hparams.datadir, self.dataset_root)
+        label_mapping_file = 'labels.txt'
+        wiki_dir = 'wiki'
+
+        self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
+        self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_memory=0)
+        self.dataset_test = self.dataset_val
+
+        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_memory=self.len_memory)
+        self.dataset_val_memory = self.dataset_train_memory
+        self.dataset_test_memory = self.dataset_train_memory
+
+        self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
+        self.dataset_val_text = self.dataset_train_text
+        self.dataset_test_text = self.dataset_train_text
+
+
+class ImageNet100classes160samples(ImageNet100DataModule):
+    ''' seen classes '''
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.dataset = ImageNet100_Dataset
+
+        self.max_classes = None
+        self.max_qeury_num_samples = 100
+        self.dataset_root = 'ILSVRC_100classes160samples'
+        self.len_memory = 30
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
+    def setup(self, stage: str):
+        root = os.path.join(self.hparams.datadir, self.dataset_root)
+        label_mapping_file = 'labels.txt'
+        wiki_dir = 'wiki'
+
+        self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
+        self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_memory=0)
+        self.dataset_test = self.dataset_val
+
+        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_memory=self.len_memory)
+        self.dataset_val_memory = self.dataset_train_memory
+        self.dataset_test_memory = self.dataset_train_memory
+
+        self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
+        self.dataset_val_text = self.dataset_train_text
+        self.dataset_test_text = self.dataset_train_text
+
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     dataset_dict = {'cifar10': CIFAR10DataModule,
@@ -670,7 +743,9 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'placesLT': Places_LT_DataModule,
                     'imagenet100' : ImageNet100DataModule,
                     'imagenetmini' : ImageNet1000DataModule,
-                    'imagenet100standard' : ImageNet100DataModule_Standard,
+                    'imagenet100standard' : ImageNet100DataModule_Standard,  # seen
+                    'imagenet1Kclasses160samples' : ImageNet1Kclasses160samples,  # seen
+                    'imagenet100classes160samples' : ImageNet100classes160samples,  # seen
                     'imagenet130samples' : ImageNet130samplesDataModule,
                     'imagenet500samples' : ImageNet500samplesDataModule,
                     'imagenetfullsamples' : ImageNetFullsamplesDataModule,
