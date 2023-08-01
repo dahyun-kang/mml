@@ -111,6 +111,12 @@ class MemoryModularLearnerTrainer(LightningModule):
         result = "\n\n\n" + result + "\n"
         print(result)
 
+    '''
+    def on_train_epoch_start(self):
+        if True:
+            self.trainer.optimizers[0].param_groups[0]['capturable'] = True
+    '''
+
     def on_train_epoch_end(self):
         self.each_epoch_end(stage='trn')
 
@@ -133,4 +139,6 @@ class MemoryModularLearnerTrainer(LightningModule):
             eps=1e-6,
         )
 
+        # lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [50, 70], gamma=0.1)
+        # return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
         return {"optimizer": optimizer}
