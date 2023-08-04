@@ -15,6 +15,8 @@ from model.decoupled import Decoupled_learner
 from model.tau_normalize import tau_normalizer
 from callbacks import CustomCheckpoint
 
+import submitit
+from submitit.helpers import RsyncSnapshot
 
 
 if __name__ == '__main__':
@@ -144,4 +146,6 @@ if __name__ == '__main__':
             model = MemoryModularLearnerTrainer.load_from_checkpoint(modelpath, args=args, dm=dm)
             trainer.test(model=model, datamodule=dm)
         else:
-            trainer.fit(model, dm)
+            snapshot_dir = os.path.join('snapshots', args.logpath)
+            with RsyncSnapshot(snapshot_dir=snapshot_dir):
+                trainer.fit(model, dm)
