@@ -426,7 +426,7 @@ class ImageNet100_Dataset(Dataset):
 
                 imgdirs = sorted(os.listdir(os.path.join(root, self.sub_dirs[i], idx)))
                 if is_memory:
-                    num_samples_i = self.len_memory
+                    num_samples_i = self.len_memory if self.len_memory else len(imgdirs)
                     imgdirs = imgdirs[-self.len_memory:]
                 else:
                     num_samples_i = min(max_samples, len(imgdirs) - self.len_memory) if max_samples else len(imgdirs) - self.len_memory
@@ -525,14 +525,24 @@ class ImageNet100DataModule(AbstractDataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_memory=0)
+        '''
+        datalen = len(self.dataset_train.targets)
+        numclass = max(self.dataset_train.targets) + 1
+        numnoise = int(datalen * 0.05)
+        noiseidx = torch.randperm(datalen)[:numnoise]
+        targets = torch.tensor(self.dataset_train.targets)
+        targets[noiseidx] = torch.randint(low=0, high=numclass, size=[numnoise])
+        self.dataset_train.targets = targets.tolist()
+        '''
+
         self.dataset_val = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
         self.dataset_test = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
 
         self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_memory=self.len_memory)
+                                          max_classes=self.max_classes, max_samples=0, transform=self.train_transform, is_memory=True, len_memory=None)
         self.dataset_val_memory = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
         self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,

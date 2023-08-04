@@ -81,7 +81,6 @@ class MemoryModularLearner(nn.Module):
         _generic_tokens = torch.empty(self.args.ntokens, 512, dtype=self.modeldtype, requires_grad=True)
         generic_tokens = nn.Parameter(_generic_tokens.clone(), requires_grad=True)
         # moved to self.on_fit_start; should be called after params being loaded to cuda
-        # nn.init.trunc_normal_(self.generic_tokens, mean=0.0, std=0.02)
         return generic_tokens
 
     def _load_memory_and_prototype(self):
@@ -259,11 +258,18 @@ class MemoryModularLearner(nn.Module):
 
         return sim
 
-    def forward_p19_1_crossmodal_self_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
+    def forward_0804_p20_trainqry_mem_1nnexclude_l2search_crossmodal_noclipbase_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
         def retrieve_knn(x, mem, k):
             with torch.no_grad():
-                classwise_sim = torch.einsum('b d, n d -> b n', x, mem)
-                _, indices = classwise_sim.topk(k=k, dim=-1, largest=True, sorted=True)
+                x_ = F.normalize(x, p=2, dim=-1)
+                mem_ = F.normalize(mem, p=2, dim=-1)  # fix at the beginning
+                classwise_sim = torch.einsum('b d, n d -> b n', x_, mem_)
+
+                if self.training:
+                    _, indices = classwise_sim.topk(k=k + 1, dim=-1, largest=True, sorted=True)
+                    indices = indices[:, 1:]
+                else:
+                    _, indices = classwise_sim.topk(k=k, dim=-1, largest=True, sorted=True)
 
                 # N, D [[B, K] -> B, K, D
                 knnemb = mem[indices]
@@ -278,16 +284,20 @@ class MemoryModularLearner(nn.Module):
         out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1)
         out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1)
 
+        '''
+        out_txt = self.attn_txt(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
+        out_img = self.attn_img(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
+        '''
+
         out_txt_ = F.normalize(out_txt, dim=-1, p=2)
         out_img_ = F.normalize(out_img, dim=-1, p=2)
-        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
         proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
         proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
 
-        sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 8.  # 32 with probfusion
+        # sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 8.  # 32 with probfusion
         sim_txt = torch.einsum('c d, b d -> b c', proto_img_, out_txt_) * self.args.multemp
         sim_img = torch.einsum('c d, b d -> b c', proto_txt_, out_img_) * self.args.multemp
 
-        sim = sim_clip + sim_txt + sim_img
+        sim = sim_txt + sim_img
 
         return sim

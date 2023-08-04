@@ -28,6 +28,7 @@ class MemoryModularLearnerTrainer(LightningModule):
         self.learner = MemoryModularLearner(args, dm, **factory_kwargs)
 
     def on_fit_start(self):
+        # torch.nn.init.trunc_normal_(self.learner.generic_tokens, mean=0.0, std=0.02)
         self.learner._load_memory_and_prototype()
 
     def on_test_start(self):
