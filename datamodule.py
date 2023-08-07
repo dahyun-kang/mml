@@ -427,7 +427,7 @@ class ImageNet100_Dataset(Dataset):
                 imgdirs = sorted(os.listdir(os.path.join(root, self.sub_dirs[i], idx)))
                 if is_memory:
                     num_samples_i = self.len_memory if self.len_memory else len(imgdirs)
-                    imgdirs = imgdirs[-self.len_memory:]
+                    imgdirs = imgdirs[-num_samples_i:]
                 else:
                     num_samples_i = min(max_samples, len(imgdirs) - self.len_memory) if max_samples else len(imgdirs) - self.len_memory
                     imgdirs = imgdirs[:num_samples_i]
