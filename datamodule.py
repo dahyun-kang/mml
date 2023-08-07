@@ -587,6 +587,19 @@ class ImageNet1000DataModule(ImageNet100DataModule):
         self.total_samples = 1000
 
 
+class ImageNet40samplesDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 10
+        self.dataset_root = 'ILSVRC_40samples'
+        self.len_memory = 30
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
+
 class ImageNet130samplesDataModule(ImageNet100DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -756,6 +769,7 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'imagenet100standard' : ImageNet100DataModule_Standard,  # seen
                     'imagenet1Kclasses160samples' : ImageNet1Kclasses160samples,  # seen
                     'imagenet100classes160samples' : ImageNet100classes160samples,  # seen
+                    'imagenet40samples' : ImageNet40samplesDataModule,
                     'imagenet130samples' : ImageNet130samplesDataModule,
                     'imagenet500samples' : ImageNet500samplesDataModule,
                     'imagenetfullsamples' : ImageNetFullsamplesDataModule,
