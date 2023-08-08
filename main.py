@@ -33,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('--multemp', type=float, default=16., help='Multiplying temperature')
     parser.add_argument('--k', type=int, default=0, help='K KNN')
     parser.add_argument('--ntokens', type=int, default=0, help='Number of tokens')
-    parser.add_argument('--maxepochs', type=int, default=500, help='Max iterations')
+    parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     # parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
     parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto'], help="Run a model don't have any differentiable parameters")
