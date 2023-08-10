@@ -547,6 +547,20 @@ class ImageNet100DataModule(AbstractDataModule):
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
         self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
+        '''
+        self.dataset_train_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+                                                      label_file = os.path.join(root, 'trn_label.json'),
+                                                      transform=self.train_transform,
+                                                      len_memory=1000)
+        self.dataset_val_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+                                                      label_file = os.path.join(root, 'val_label.json'),
+                                                      transform=self.val_transform,
+                                                      len_memory=1000)
+        self.dataset_tst_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+                                                      label_file = os.path.join(root, 'tst_label.json'),
+                                                      transform=self.val_transform,
+                                                      len_memory=1000)
+        '''
 
         self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
         self.dataset_val_text = TextToken_Dataset(self.dataset_val.text_tokens, self.dataset_val.num_sents)
@@ -752,6 +766,58 @@ class ImageNet100classes160samples(ImageNet100DataModule):
         self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
         self.dataset_val_text = self.dataset_train_text
         self.dataset_test_text = self.dataset_train_text
+
+
+class Webvision_dataset(Dataset):
+    def __init__(self, root='webvision', label_file = '', max_classes = None, transform=None, len_memory=1000):
+        self.transform = transform
+
+        # n0xxxxxxx -> 'web' 0 ~ 999
+        synset2webtarget = {}
+        webtarget2synset = {}
+        with open(os.path.join(root, 'info/synsets.txt')) as f:
+            lines = f.readlines()
+        for linenum, line in enumerate(lines):
+            nxxxxxxxx = line.split()[0]
+            synset2webtarget[nxxxxxxxx] = linenum
+            webtarget2synset[linenum] = nxxxxxxxx
+
+        with open(label_file) as f:
+            idxs_cls = json.load(f)
+        synset_set = idxs_cls.keys()  # [nxxxxxxxx, ..., nxxxxxxxx]
+        num_classes = len(synset_set)
+
+        with open(os.path.join(root, 'info/train_filelist_google.txt')) as f:
+            lines = f.readlines()
+
+        self.img_path = []
+        self.targets = []
+        num_samples_count = [0] * num_classes
+
+        for line in lines:
+            img, webtarget = line.split()
+            webtarget = int(webtarget)
+
+            if webtarget2synset[webtarget] in synset_set:
+                # webvision is always memory
+                synset = webtarget2synset[webtarget]
+                target = idxs_cls[synset]
+                if num_samples_count[target] == 0:
+                    print(webtarget, '->', synset, '->', target)
+                if num_samples_count[target] >= len_memory: continue
+                self.img_path.append(os.path.join(root, img))
+                self.targets.append(target)
+                num_samples_count[target] += 1
+
+    def __getitem__(self, index):
+        img_path = self.img_path[index]
+        target = self.targets[index]
+        image = Image.open(img_path).convert('RGB')
+        img = self.transform(image)
+        return img, target
+
+    def __len__(self):
+        return len(self.targets)
 
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
