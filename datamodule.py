@@ -556,7 +556,7 @@ class ImageNet100DataModule(AbstractDataModule):
                                                       label_file = os.path.join(root, 'val_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
-        self.dataset_tst_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+        self.dataset_test_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file = os.path.join(root, 'tst_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
