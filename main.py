@@ -21,6 +21,7 @@ from submitit.helpers import RsyncSnapshot
 
 if __name__ == '__main__':
     seed_everything(7)
+    # torch.multiprocessing.set_sharing_strategy('file_system')
 
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset root path')
