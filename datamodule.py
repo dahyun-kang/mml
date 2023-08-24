@@ -614,6 +614,19 @@ class ImageNet40samplesDataModule(ImageNet100DataModule):
         self.test_subdirs = ['val']
 
 
+class MiniImagenetDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 595
+        self.dataset_root = 'miniimagenet'
+        self.len_memory = 5
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
+
 class ImageNet130samplesDataModule(ImageNet100DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -809,6 +822,20 @@ class Webvision_dataset(Dataset):
                 self.targets.append(target)
                 num_samples_count[target] += 1
 
+        '''
+        with open(os.path.join(root, 'info/synsets.txt')) as f:
+            lines = f.readlines()
+
+        self.txtlabels = {}
+
+        for linenum, line in enumerate(lines):
+            nxxxxxxxx = line.split()[0]
+            classtxtlabel = line[10:-1]
+            if nxxxxxxxx in synset_set:
+                target = idxs_cls[nxxxxxxxx]
+                self.txtlabels[target] = classtxtlabel
+        '''
+
     def __getitem__(self, index):
         img_path = self.img_path[index]
         target = self.targets[index]
@@ -835,6 +862,7 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'imagenet100standard' : ImageNet100DataModule_Standard,  # seen
                     'imagenet1Kclasses160samples' : ImageNet1Kclasses160samples,  # seen
                     'imagenet100classes160samples' : ImageNet100classes160samples,  # seen
+                    'miniimagenet' : MiniImagenetDataModule,
                     'imagenet40samples' : ImageNet40samplesDataModule,
                     'imagenet130samples' : ImageNet130samplesDataModule,
                     'imagenet500samples' : ImageNet500samplesDataModule,
@@ -853,3 +881,4 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     )
 
     return datamodule
+
