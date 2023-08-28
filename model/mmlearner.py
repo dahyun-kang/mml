@@ -91,6 +91,7 @@ class MemoryModularLearner(nn.Module):
         self.txt_label = {'trn': None, 'val': None, 'tst': None}
         self.txt_proto = {'trn': None, 'val': None, 'tst': None}
 
+        # load or save memory
         for split, img_loader, txt_loader in \
                 zip(['trn', 'val', 'tst'],
                     [self.dm.train_memory_dataloader,
@@ -116,20 +117,41 @@ class MemoryModularLearner(nn.Module):
                 torch.save(img_embed, img_embed_path) ; torch.save(img_label, img_label_path)
                 torch.save(txt_embed, txt_embed_path) ; torch.save(txt_label, txt_label_path)
 
-            img_label_idx = img_label.unique().sort()[0]
-            img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
-            img_proto = torch.stack(img_proto, dim=0)  # C, D
-
             txt_label_idx = txt_label.unique().sort()[0]
             txt_proto = [txt_embed[txt_label == c].mean(dim=0) for c in txt_label_idx]
             txt_proto = torch.stack(txt_proto, dim=0)  # C, D
 
             self.img_embed[split] = img_embed ; self.txt_embed[split] = txt_embed
-            self.img_label[split] = img_label ; self.txt_label[split] = txt_label
-            self.img_proto[split] = img_proto ; self.txt_proto[split] = txt_proto
+            self.img_label[split] = img_label ; self.txt_label[split] = txt_label  # actually not used in current forward
+            self.txt_proto[split] = txt_proto
 
             num_samples = int(img_embed.shape[0]) // (int(max(img_label)) + 1)
             print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
+
+        # load few-shot prototype
+        for split, img_shot_loader in \
+                zip(['trn', 'val', 'tst'],
+                    [self.dm.train_shot_dataloader,
+                        self.dm.val_shot_dataloader,
+                        self.dm.test_shot_dataloader]):
+
+            img_proto_path = osp.join(self.cachedir, f'{split}_img_proto.pth')
+
+            if osp.exists(img_proto_path):
+                print(f'\n *** [{split}] loading class prototype checkpoints from {self.cachedir}. *** \n')
+                img_proto = torch.load(img_proto_path)
+            else:
+                print(f'\n *** [{split}] embed/label not found. Generating class prototype checkpoints and saving them at {self.cachedir}. *** \n')
+                img_embed, img_label = self._init_memory(img_shot_loader, split, modality='img')
+
+                img_label_idx = img_label.unique().sort()[0]
+                img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
+                img_proto = torch.stack(img_proto, dim=0)  # C, D
+                torch.save(img_proto, img_proto_path)
+
+            self.img_proto[split] = img_proto
+
+            print(f"\n{split} class prototype info: dim_of_samples = {img_proto.shape[0]}x{img_proto.shape[1]}")
 
         trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
         self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]

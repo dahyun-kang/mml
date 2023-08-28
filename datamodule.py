@@ -567,13 +567,13 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset_test = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
 
-        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=0, transform=self.train_transform, is_memory=True, len_memory=None)
-        self.dataset_val_memory = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+        self.dataset_train_shot = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=0, transform=self.train_transform, is_memory=True, len_memory=None)  # becomes equivalent to dataset_train
+        self.dataset_val_shot = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
-        self.dataset_test_memory = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+        self.dataset_test_shot = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
-        '''
+
         self.dataset_train_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file = os.path.join(root, 'trn_label.json'),
                                                       transform=self.train_transform,
@@ -586,7 +586,6 @@ class ImageNet100DataModule(AbstractDataModule):
                                                       label_file = os.path.join(root, 'tst_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
-        '''
 
         self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
         self.dataset_val_text = TextToken_Dataset(self.dataset_val.text_tokens, self.dataset_val.num_sents)
@@ -604,6 +603,13 @@ class ImageNet100DataModule(AbstractDataModule):
     def test_text_dataloader(self):
         return DataLoader(self.dataset_test_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
+    def train_shot_dataloader(self):
+        return DataLoader(self.dataset_train_shot, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+    def val_shot_dataloader(self):
+        return DataLoader(self.dataset_val_shot, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+    def test_shot_dataloader(self):
+        return DataLoader(self.dataset_test_shot, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+
     def train_memory_dataloader(self):
         return DataLoader(self.dataset_train_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
     def val_memory_dataloader(self):
@@ -619,6 +625,9 @@ class ImageNet100DataModule(AbstractDataModule):
         if not hasattr(self, 'dataset_test_all'):
             self.dataset_test_all = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                                 max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=None)
+            self.dataset_test_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+                                                         label_file = os.path.join(root, 'tst_label.json'),
+                                                         transform=self.val_transform, len_memory=1000)
 
         classset = torch.randperm(self.dataset_test_all.num_classes)[:nclass]
         classset = classset.sort()[0]
@@ -647,7 +656,8 @@ class ImageNet100DataModule(AbstractDataModule):
             query_targets += [i] * nquery
 
         self.dataset_test = SubsetDataset(data=query_img_path, targets=query_targets, transform=self.val_transform)
-        self.dataset_test_memory = SubsetDataset(data=shot_img_path, targets=shot_targets, transform=self.val_transform)
+        self.dataset_test_shot = SubsetDataset(data=shot_img_path, targets=shot_targets, transform=self.val_transform)
+        self.dataset_test_memory # to be implemented
 
         self.dataset_test_text = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
 
