@@ -42,6 +42,7 @@ if __name__ == '__main__':
     parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
     parser.add_argument('--Decoupled', type=str, default=None, choices=['joint', 'cRT', 'tau', 'feat_extract'], help='Flag to run reproducing expriement of Decoupled Learning')
     parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
+    parser.add_argument('--episodiceval', action='store_true', help='Flag for episodic evaluation')
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
     parser.add_argument('--jobid', type=int, default=0, help='Slurm job ID')
 
@@ -146,6 +147,17 @@ if __name__ == '__main__':
             modelpath = checkpoint_callback.modelpath
             model = MemoryModularLearnerTrainer.load_from_checkpoint(modelpath, args=args, dm=dm)
             trainer.test(model=model, datamodule=dm)
+        elif args.episodiceval:
+            modelpath = checkpoint_callback.modelpath
+            model = MemoryModularLearnerTrainer.load_from_checkpoint(modelpath, args=args, dm=dm)
+            nepisode = 600
+            accsum = 0.
+            for i in range(nepisode):
+                seed_everything(i)
+                testresult = trainer.test(model=model, datamodule=dm)
+                acc = testresult[0]['tst/acc']
+                accsum += acc
+                print(f'{i + 1}/{nepisode} avg acc: {accsum / (i + 1)}')
         else:
             snapshot_dir = os.path.join('snapshots', args.logpath)
             with RsyncSnapshot(snapshot_dir=snapshot_dir):

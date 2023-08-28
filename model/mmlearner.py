@@ -134,6 +134,47 @@ class MemoryModularLearner(nn.Module):
         trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
         self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
 
+    def _load_episodic_test_memory_and_prototype(self):
+        split = 'tst'  # by default
+        self.img_embed = {split: None}
+        self.img_label = {split: None}
+        self.img_proto = {split: None}
+        self.txt_embed = {split: None}
+        self.txt_label = {split: None}
+        self.txt_proto = {split: None}
+
+        classset = self.dm.classset  # renewed everytime with random seeds
+        img_loader = self.dm.test_memory_dataloader
+        img_embed, img_label = self._init_memory(img_loader, split, modality='img')
+        self.img_embed[split] = img_embed
+        self.img_label[split] = img_label  # 0, 1, 2, ...
+
+        img_label_idx = img_label.unique().sort()[0]
+        img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
+        self.img_proto[split] = torch.stack(img_proto, dim=0)  # C, D
+
+        if not hasattr(self, 'txt_embed_tst_all'):
+            txt_embed_path = osp.join(self.cachedir, f'{split}_txt_embed.pth')
+            self.txt_embed_tst_all = torch.load(txt_embed_path)
+        if not hasattr(self, 'txt_label_tst_all'):
+            txt_label_path = osp.join(self.cachedir, f'{split}_txt_label.pth')
+            self.txt_label_tst_all = torch.load(txt_label_path)
+
+        txt_embed = []
+        txt_label = []
+        for c in classset:
+            idx_c = torch.nonzero(self.txt_label_tst_all == c).squeeze()
+            txt_embed.append(self.txt_embed_tst_all[idx_c])
+            txt_label.append(self.txt_label_tst_all[idx_c])
+
+        self.txt_embed[split] = torch.cat(txt_embed, dim=0).detach()  # N, D
+        # actually this one is not used in forward
+        self.txt_label[split] = torch.cat(txt_label, dim=0).detach()  # original class index
+
+        txt_label_idx = self.txt_label[split].unique().sort()[0]
+        txt_proto = [self.txt_embed[split][self.txt_label[split] == c].mean(dim=0) for c in txt_label_idx]
+        self.txt_proto[split] = torch.stack(txt_proto, dim=0)  # C, D
+
     def _init_memory(self, loader, split, modality):
         '''
         Return an irregular memory list of image/text features with different number for each class

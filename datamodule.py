@@ -9,6 +9,7 @@ from PIL import Image
 import os
 import json
 
+from pytorch_lightning import seed_everything
 from sampler.ClassAwareSampler import ClassAwareSampler
 from sampler.WeightedSampler import WeightedDistributedSampler
 from text_data.preprocess import SentPreProcessor
@@ -487,6 +488,30 @@ class ImageNet100_Dataset(Dataset):
         preprocessor = SentPreProcessor(self.root, self.loaded_idxs, label_mapping_file, wiki_dir, context_length=75)
         return preprocessor.make_sentence_tokens()
 
+
+class SubsetDataset(Dataset):
+    def __init__(self, data, targets, transform=None):
+        self.data = data
+        self.targets = targets
+        self.transform = transform
+
+    def __getitem__(self, index):
+
+        path = self.data[index]
+        label = self.targets[index]
+
+        with open(path, 'rb') as f:
+            sample = Image.open(f).convert('RGB')
+
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample, label
+
+    def __len__(self):
+        return len(self.targets)
+
+
 class TextToken_Dataset(Dataset):
     def __init__(self, text_tokens: list, num_sents: list):
         self.data = torch.cat(text_tokens)
@@ -520,6 +545,7 @@ class ImageNet100DataModule(AbstractDataModule):
         self.test_subdirs = ['train.X2']
 
     def setup(self, stage: str):
+        # if episodiceval: return self.setup_episodic_eval()
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
         wiki_dir = 'wiki'
@@ -584,6 +610,46 @@ class ImageNet100DataModule(AbstractDataModule):
         return DataLoader(self.dataset_val_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
     def test_memory_dataloader(self):
         return DataLoader(self.dataset_test_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+
+    def setup_episodic_eval(self, nclass=5, nshot=5, nquery=15):
+        root = os.path.join(self.hparams.datadir, self.dataset_root)
+        label_mapping_file = 'labels.txt'
+        wiki_dir = 'wiki'
+
+        if not hasattr(self, 'dataset_test_all'):
+            self.dataset_test_all = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                                max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=None)
+
+        classset = torch.randperm(self.dataset_test_all.num_classes)[:nclass]
+        classset = classset.sort()[0]
+        self.classset = classset
+
+        shot_img_path = []
+        shot_targets = []
+        query_img_path = []
+        query_targets = []
+
+        # i: 0, 1, 2, ... | c: original class indices
+        for i, c in enumerate(classset):
+            # collect c-th class samples
+            idx_c = torch.nonzero(torch.tensor(self.dataset_test_all.targets) == c).squeeze().tolist()
+            img_path_c = np.array(self.dataset_test_all.img_path)[idx_c].tolist()
+            # targets_c = np.array(self.targets)[idx_c].tolist()
+
+            # randomly sample n samples
+            randidx = torch.randperm(len(img_path_c))[:nshot + nquery]
+            shot_idx = randidx[:nshot]
+            query_idx = randidx[nshot:]
+
+            shot_img_path += [img_path_c[shot_idx]] if nshot == 1 else np.array(img_path_c)[shot_idx].tolist()
+            query_img_path += np.array(img_path_c)[query_idx].tolist()
+            shot_targets += [i] * nshot
+            query_targets += [i] * nquery
+
+        self.dataset_test = SubsetDataset(data=query_img_path, targets=query_targets, transform=self.val_transform)
+        self.dataset_test_memory = SubsetDataset(data=shot_img_path, targets=shot_targets, transform=self.val_transform)
+
+        self.dataset_test_text = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
 
     @property
     def num_classes(self) -> int:

@@ -9,7 +9,7 @@ class CustomCheckpoint(ModelCheckpoint):
     def __init__(self, args):
         self.dirpath = os.path.join('logs', args.dataset, args.backbone, args.logpath)
 
-        if not args.eval and not args.resume and args.Decoupled not in ['cRT', 'tau', 'feat_extract']:
+        if not args.eval and not args.episodiceval and not args.resume and args.Decoupled not in ['cRT', 'tau', 'feat_extract']:
             assert not os.path.exists(self.dirpath), f'{self.dirpath} already exists'
         self.filename = 'best_model'
         self.monitor = 'val/acc'
@@ -21,7 +21,7 @@ class CustomCheckpoint(ModelCheckpoint):
                                                verbose=True,
                                                save_last=True)
         # For evaluation, load best_model-v(k).cpkt where k is the max index
-        if args.eval and not args.runfree:
+        if args.eval or args.episodiceval and not args.runfree:
             self.modelpath = self.return_best_model_path(self.dirpath, self.filename)
             print('evaluating', self.modelpath)
         # For training, set the filename as best_model.ckpt
