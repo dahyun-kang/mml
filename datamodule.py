@@ -625,7 +625,7 @@ class ImageNet100DataModule(AbstractDataModule):
         if not hasattr(self, 'dataset_test_all'):
             self.dataset_test_all = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                                 max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=None)
-            self.dataset_test_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+            self.dataset_test_memory_all = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                          label_file = os.path.join(root, 'tst_label.json'),
                                                          transform=self.val_transform, len_memory=1000)
 
@@ -637,6 +637,8 @@ class ImageNet100DataModule(AbstractDataModule):
         shot_targets = []
         query_img_path = []
         query_targets = []
+        mem_img_path = []
+        mem_targets = []
 
         # i: 0, 1, 2, ... | c: original class indices
         for i, c in enumerate(classset):
@@ -655,9 +657,15 @@ class ImageNet100DataModule(AbstractDataModule):
             shot_targets += [i] * nshot
             query_targets += [i] * nquery
 
+            # collect c-th class "memory"
+            mem_idx_c = torch.nonzero(torch.tensor(self.dataset_test_memory_all.targets) == c).squeeze().tolist()
+            mem_img_path_c = np.array(self.dataset_test_memory_all.img_path)[mem_idx_c].tolist()
+            mem_img_path += mem_img_path_c
+            mem_targets += [i] * len(mem_img_path_c)
+
         self.dataset_test = SubsetDataset(data=query_img_path, targets=query_targets, transform=self.val_transform)
         self.dataset_test_shot = SubsetDataset(data=shot_img_path, targets=shot_targets, transform=self.val_transform)
-        self.dataset_test_memory # to be implemented
+        self.dataset_test_memory = SubsetDataset(data=mem_img_path, targets=mem_targets, transform=self.val_transform)
 
         self.dataset_test_text = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
 
