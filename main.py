@@ -1,4 +1,5 @@
 """ Memory Referencing Classification """
+import math
 import os
 import argparse
 import torch
@@ -140,9 +141,8 @@ if __name__ == '__main__':
         # if args.nakata22:
         #     # non-differentiable majority voting method, Nakata et al., ECCV 2022
         #     trainer.test(model, datamodule=dm)
-        if args.runfree:
+        if args.runfree or not args.episodiceval:
             trainer.test(model, datamodule=dm)
-
         elif args.eval:
             modelpath = checkpoint_callback.modelpath
             model = MemoryModularLearnerTrainer.load_from_checkpoint(modelpath, args=args, dm=dm)
@@ -151,13 +151,16 @@ if __name__ == '__main__':
             modelpath = checkpoint_callback.modelpath
             model = MemoryModularLearnerTrainer.load_from_checkpoint(modelpath, args=args, dm=dm)
             nepisode = 600
-            accsum = 0.
+            acc_list = torch.zeros(nepisode)
             for i in range(nepisode):
                 seed_everything(i)
                 testresult = trainer.test(model=model, datamodule=dm)
                 acc = testresult[0]['tst/acc']
-                accsum += acc
-                print(f'{i + 1}/{nepisode} avg acc: {accsum / (i + 1)}')
+                acc_list[i] = acc
+                avg_acc = torch.mean(acc_list[:i + 1])
+                std_acc = torch.std(acc_list[:i + 1])
+                ci = std_acc * 1.96 / math.sqrt(i + 1)  # 95% confidence interval
+                print(f'{i + 1}/{nepisode} avg acc: {avg_acc} +- {ci}')
         else:
             snapshot_dir = os.path.join('snapshots', args.logpath)
             with RsyncSnapshot(snapshot_dir=snapshot_dir):
