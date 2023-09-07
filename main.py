@@ -141,7 +141,7 @@ if __name__ == '__main__':
         # if args.nakata22:
         #     # non-differentiable majority voting method, Nakata et al., ECCV 2022
         #     trainer.test(model, datamodule=dm)
-        if args.runfree or not args.episodiceval:
+        if args.runfree and not args.episodiceval:
             trainer.test(model, datamodule=dm)
         elif args.eval:
             modelpath = checkpoint_callback.modelpath
