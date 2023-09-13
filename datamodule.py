@@ -563,9 +563,9 @@ class ImageNet100DataModule(AbstractDataModule):
         '''
 
         self.dataset_val = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
         self.dataset_test = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
 
         self.dataset_train_shot = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=self.max_classes, max_samples=0, transform=self.train_transform, is_memory=True, len_memory=None)  # becomes equivalent to dataset_train
@@ -683,6 +683,19 @@ class ImageNet1000DataModule(ImageNet100DataModule):
         self.dataset_root = 'imagenet-mini'
         self.memory_split = 700
         self.total_samples = 1000
+
+
+class ImageNet30samplesDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 100
+        self.dataset_root = 'ILSVRC_30samples'
+        self.len_memory = 30
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
 
 
 class ImageNet40samplesDataModule(ImageNet100DataModule):
@@ -803,9 +816,9 @@ class ImageNet1Kclasses160samples(ImageNet100DataModule):
         self.dataset = ImageNet100_Dataset
 
         self.max_classes = None
-        self.max_qeury_num_samples = 30  # 130
+        self.max_qeury_num_samples = 130  # 16
         self.dataset_root = 'ILSVRC_1Kclasses160samples'
-        self.len_memory = 30  # shot
+        self.len_memory = 30 # shot # 16
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
@@ -961,6 +974,7 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'imagenet1Kclasses160samples' : ImageNet1Kclasses160samples,  # seen
                     'imagenet100classes160samples' : ImageNet100classes160samples,  # seen
                     'miniimagenet' : MiniImagenetDataModule,
+                    'imagenet30samples' : ImageNet30samplesDataModule,
                     'imagenet40samples' : ImageNet40samplesDataModule,
                     'imagenet130samples' : ImageNet130samplesDataModule,
                     'imagenet500samples' : ImageNet500samplesDataModule,
