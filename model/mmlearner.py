@@ -137,6 +137,8 @@ class MemoryModularLearner(nn.Module):
 
             img_proto_path = osp.join(self.cachedir, f'{split}_img_proto.pth')
 
+            # clean few-shot image samples
+            '''
             if osp.exists(img_proto_path):
                 print(f'\n *** [{split}] loading class prototype checkpoints from {self.cachedir}. *** \n')
                 img_proto = torch.load(img_proto_path)
@@ -148,7 +150,22 @@ class MemoryModularLearner(nn.Module):
                 img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
                 img_proto = torch.stack(img_proto, dim=0)  # C, D
                 torch.save(img_proto, img_proto_path)
+            '''
 
+            img_embed = self.img_embed[split] ; txt_embed = self.txt_embed[split]
+            img_label = self.img_label[split] ; txt_label = self.txt_label[split]
+
+            for c in torch.unique(img_label):
+                img_embed_c = img_embed[img_label == c]
+                txt_embed_c = txt_embed[txt_label == c]
+                img_embed_c_l2 = F.normalize(img_embed_c, dim=-1, p=2)
+                txt_embed_c_l2 = F.normalize(txt_embed_c, dim=-1, p=2)
+                sim = torch.einsum('n d, m d -> n m', img_embed_c_l2, txt_embed_c_l2)
+                sim = sim.sum(dim=-1)
+                _, indices = sim.topk(k=16, dim=-1, largest=True, sorted=True)  # TODO: make it args
+                img_proto_list.append(img_embed_c[indices].mean(dim=0))
+
+            img_proto = torch.stack(img_proto_list, dim=0)
             self.img_proto[split] = img_proto
 
             print(f"\n{split} class prototype info: dim_of_samples = {img_proto.shape[0]}x{img_proto.shape[1]}")
@@ -243,7 +260,7 @@ class MemoryModularLearner(nn.Module):
         with torch.no_grad():
             out = self.backbone(x)
 
-        assert self.args.eval, "This method can't be learned"
+        # assert self.args.eval, "This method can't be learned"  # TODO: add episodiceval
 
         memory = self.img_embed['tst'].to(x.device)
         labels = self.img_label['tst']
@@ -321,18 +338,14 @@ class MemoryModularLearner(nn.Module):
 
         return sim
 
-    def forward_0804_p20_trainqry_mem_1nnexclude_l2search_crossmodal_noclipbase_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
+    # def forward_0804_p20_trainqry_mem_1nnexclude_l2search_crossmodal_noclipbase_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
+    def forward_0909_p21_addclipfeat_txtembedl2simlargest16shotproto(self, x, y, stage):
         def retrieve_knn(x, mem, k):
             with torch.no_grad():
                 x_ = F.normalize(x, p=2, dim=-1)
                 mem_ = F.normalize(mem, p=2, dim=-1)  # fix at the beginning
-                classwise_sim = torch.einsum('b d, n d -> b n', x_, mem_)
-
-                if self.training:
-                    _, indices = classwise_sim.topk(k=k + 1, dim=-1, largest=True, sorted=True)
-                    indices = indices[:, 1:]
-                else:
-                    _, indices = classwise_sim.topk(k=k, dim=-1, largest=True, sorted=True)
+                sim = torch.einsum('b d, n d -> b n', x_, mem_)
+                _, indices = sim.topk(k=k, dim=-1, largest=True, sorted=True)
 
                 # N, D [[B, K] -> B, K, D
                 knnemb = mem[indices]
@@ -342,16 +355,17 @@ class MemoryModularLearner(nn.Module):
             clipfeat = self.backbone(x)
 
         kv_txt = retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.k)
-        kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.k)
+        kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.k)  # TODO: set ik=128
 
-        out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1)
-        out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1)
+        out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1) + clipfeat
+        out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1) + clipfeat
 
         '''
         out_txt = self.attn_txt(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
         out_img = self.attn_img(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
         '''
 
+        # clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
         out_txt_ = F.normalize(out_txt, dim=-1, p=2)
         out_img_ = F.normalize(out_img, dim=-1, p=2)
         proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
