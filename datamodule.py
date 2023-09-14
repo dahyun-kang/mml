@@ -535,7 +535,7 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset = ImageNet100_Dataset
 
         self.max_classes = None
-        self.max_qeury_num_samples = 1100
+        self.max_query_num_samples = 1100
         self.dataset_root = 'imagenet100'
         self.len_shot = 200
         self.train_subdirs = ['train.X1', 'train.X3', 'train.X4']
@@ -561,9 +561,9 @@ class ImageNet100DataModule(AbstractDataModule):
         '''
 
         self.dataset_val = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_test = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
 
         self.dataset_train_shot = self.dataset_train
         self.dataset_val_shot = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
@@ -676,7 +676,7 @@ class ImageNet1000DataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 700
+        self.max_query_num_samples = 700
         self.dataset_root = 'imagenet-mini'
         self.memory_split = 700
         self.total_samples = 1000
@@ -687,7 +687,7 @@ class ImageNet30samplesDataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 100
+        self.max_query_num_samples = 100
         self.dataset_root = 'ILSVRC_30samples'
         self.len_shot = 30
         self.train_subdirs = ['train']
@@ -700,7 +700,7 @@ class ImageNet40samplesDataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 10
+        self.max_query_num_samples = 10
         self.dataset_root = 'ILSVRC_40samples'
         self.len_shot = 30
         self.train_subdirs = ['train']
@@ -713,7 +713,7 @@ class MiniImagenetDataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 595
+        self.max_query_num_samples = 595
         self.dataset_root = 'miniimagenet'
         self.len_shot = 5
         self.train_subdirs = ['train']
@@ -726,7 +726,7 @@ class ImageNet130samplesDataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 100
+        self.max_query_num_samples = 100
         self.dataset_root = 'ILSVRC_130samples'
         # self.memory_split = 100
         self.len_shot = 30
@@ -741,7 +741,7 @@ class ImageNet500samplesDataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 300
+        self.max_query_num_samples = 300
         self.dataset_root = 'ILSVRC_500samples'
         # self.memory_split = 400
         self.len_shot = 200
@@ -756,7 +756,7 @@ class ImageNetFullsamplesDataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 1100
+        self.max_query_num_samples = 1100
         self.dataset_root = 'ILSVRC_1300samples'
         self.len_shot = 200
         # self.total_samples = 1300  # to make it length-agnostic
@@ -770,7 +770,7 @@ class ImageNetUnseen16shotDataModule(ImageNet100DataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 200  # val/test queries
+        self.max_query_num_samples = 200  # val/test queries
         self.dataset_root = 'ILSVRC_unseen16shots'
         self.len_shot = 16
         self.train_subdirs = ['train']
@@ -794,9 +794,9 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
         self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_test = self.dataset(root, train=False, sub_dirs=self.test_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
 
         self.dataset_train_shot = self.dataset_train  # equivalent to dataset_train and shared with all splits
         self.dataset_val_shot = self.dataset_train_shot
@@ -819,7 +819,7 @@ class ImageNetSeen16shotDataModule(ImageNet100DataModule_Standard):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_qeury_num_samples = 200  # val/test queries
+        self.max_query_num_samples = 200  # val/test queries
         self.dataset_root = 'ILSVRC_seen16shots'
         self.len_shot = 16
         self.train_subdirs = ['train']
@@ -846,7 +846,7 @@ class ImageNet1Kclasses160samples(ImageNet100DataModule):
         self.dataset = ImageNet100_Dataset
 
         self.max_classes = None
-        self.max_qeury_num_samples = 130  # 16
+        self.max_query_num_samples = 130  # 16
         self.dataset_root = 'ILSVRC_1Kclasses160samples'
         self.len_shot = 30 # shot # 16
         self.train_subdirs = ['train']
@@ -859,7 +859,7 @@ class ImageNet1Kclasses160samples(ImageNet100DataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
+                                          max_classes=self.max_classes, max_samples=self.max_query_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_shot=0)
         self.dataset_test = self.dataset_val
@@ -894,7 +894,7 @@ class ImageNet100classes160samples(ImageNet100DataModule):
         self.dataset = ImageNet100_Dataset
 
         self.max_classes = None
-        self.max_qeury_num_samples = 100
+        self.max_query_num_samples = 100
         self.dataset_root = 'ILSVRC_100classes160samples'
         self.len_shot = 30
         self.train_subdirs = ['train']
@@ -907,7 +907,7 @@ class ImageNet100classes160samples(ImageNet100DataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
+                                          max_classes=self.max_classes, max_samples=self.max_query_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_shot=0)
         self.dataset_test = self.dataset_val
