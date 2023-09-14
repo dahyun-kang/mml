@@ -149,12 +149,13 @@ class MemoryModularLearner(nn.Module):
                 img_label_idx = img_label.unique().sort()[0]
                 img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
                 img_proto = torch.stack(img_proto, dim=0)  # C, D
-                torch.save(img_proto, img_proto_path)
+                # torch.save(img_proto, img_proto_path)
             '''
 
             img_embed = self.img_embed[split] ; txt_embed = self.txt_embed[split]
             img_label = self.img_label[split] ; txt_label = self.txt_label[split]
 
+            img_proto_list = []
             for c in torch.unique(img_label):
                 img_embed_c = img_embed[img_label == c]
                 txt_embed_c = txt_embed[txt_label == c]
@@ -166,6 +167,7 @@ class MemoryModularLearner(nn.Module):
                 img_proto_list.append(img_embed_c[indices].mean(dim=0))
 
             img_proto = torch.stack(img_proto_list, dim=0)
+
             self.img_proto[split] = img_proto
 
             print(f"\n{split} class prototype info: dim_of_samples = {img_proto.shape[0]}x{img_proto.shape[1]}")
@@ -339,7 +341,8 @@ class MemoryModularLearner(nn.Module):
         return sim
 
     # def forward_0804_p20_trainqry_mem_1nnexclude_l2search_crossmodal_noclipbase_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
-    def forward_0909_p21_addclipfeat_txtembedl2simlargest16shotproto(self, x, y, stage):
+    # def forward_0909_p21_addclipfeat_txtembedl2simlargest16shotproto(self, x, y, stage):
+    def forward(self, x, y, stage):
         def retrieve_knn(x, mem, k):
             with torch.no_grad():
                 x_ = F.normalize(x, p=2, dim=-1)
