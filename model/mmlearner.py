@@ -357,8 +357,8 @@ class MemoryModularLearner(nn.Module):
         with torch.no_grad():
             clipfeat = self.backbone(x)
 
-        kv_txt = retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.k)
-        kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.k)  # TODO: set ik=128
+        kv_txt = retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.tk)
+        kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.ik)
 
         out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1) + clipfeat
         out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1) + clipfeat
