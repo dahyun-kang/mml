@@ -798,6 +798,10 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         self.dataset_test = self.dataset(root, train=False, sub_dirs=self.test_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
 
+        self.dataset_train_shot = self.dataset_train  # equivalent to dataset_train and shared with all splits
+        self.dataset_val_shot = self.dataset_train_shot
+        self.dataset_test_shot = self.dataset_train_shot
+
         self.dataset_train_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'standard_label.json'),
                                                       transform=self.train_transform,
