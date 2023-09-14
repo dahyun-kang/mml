@@ -395,11 +395,11 @@ Attribute (may someone needed....)
         number of sentences of each classes. same as #_sentences
 """
 class ImageNet100_Dataset(Dataset):
-    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False, len_memory=1000):
+    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False, len_shot=1000):
         self.root = root
 
         # memory_split cant handle variable query length. Let's fix the len of the memory and set the remainder as queries
-        self.len_memory = len_memory  # query : [0 ~ (-len_memory - 1 or max_samples)], memory : [len_memory ~ to the last elem]
+        self.len_shot = len_shot # query : [0 ~ (-len_shot - 1 or max_samples)], memory : [len_shot ~ to the last elem]
 
         self.sub_dirs = sub_dirs # choose in ['train.X1', 'train.X2', 'train.X3', 'train.X4', 'val.X']
         self.sub_idxs = [sorted(os.listdir(os.path.join(self.root, subdir))) for subdir in self.sub_dirs]
@@ -427,10 +427,10 @@ class ImageNet100_Dataset(Dataset):
 
                 imgdirs = sorted(os.listdir(os.path.join(root, self.sub_dirs[i], idx)))
                 if is_memory:
-                    num_samples_i = self.len_memory if self.len_memory else len(imgdirs)
+                    num_samples_i = self.len_shot if self.len_shot else len(imgdirs)
                     imgdirs = imgdirs[-num_samples_i:]
                 else:
-                    num_samples_i = min(max_samples, len(imgdirs) - self.len_memory) if max_samples else len(imgdirs) - self.len_memory
+                    num_samples_i = min(max_samples, len(imgdirs) - self.len_shot) if max_samples else len(imgdirs) - self.len_shot
                     imgdirs = imgdirs[:num_samples_i]
 
                 for imgdir in imgdirs:
@@ -537,9 +537,7 @@ class ImageNet100DataModule(AbstractDataModule):
         self.max_classes = None
         self.max_qeury_num_samples = 1100
         self.dataset_root = 'imagenet100'
-        # self.memory_split = 1000
-        self.len_memory = 200
-        # self.total_samples = 1300
+        self.len_shot = 200
         self.train_subdirs = ['train.X1', 'train.X3', 'train.X4']
         self.val_subdirs = ['train.X2']
         self.test_subdirs = ['train.X2']
@@ -551,7 +549,7 @@ class ImageNet100DataModule(AbstractDataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_memory=0)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
         '''
         datalen = len(self.dataset_train.targets)
         numclass = max(self.dataset_train.targets) + 1
@@ -563,27 +561,26 @@ class ImageNet100DataModule(AbstractDataModule):
         '''
 
         self.dataset_val = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_test = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
 
-        self.dataset_train_shot = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=0, transform=self.train_transform, is_memory=True, len_memory=None)  # becomes equivalent to dataset_train
+        self.dataset_train_shot = self.dataset_train
         self.dataset_val_shot = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
         self.dataset_test_shot = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=self.len_memory)
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
 
         self.dataset_train_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file = os.path.join(root, 'trn_label.json'),
+                                                      label_file=os.path.join(root, 'trn_label.json'),
                                                       transform=self.train_transform,
                                                       len_memory=1000)
         self.dataset_val_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file = os.path.join(root, 'val_label.json'),
+                                                      label_file=os.path.join(root, 'val_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
         self.dataset_test_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file = os.path.join(root, 'tst_label.json'),
+                                                      label_file=os.path.join(root, 'tst_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
 
@@ -624,9 +621,9 @@ class ImageNet100DataModule(AbstractDataModule):
 
         if not hasattr(self, 'dataset_test_all'):
             self.dataset_test_all = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                                max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_memory=None)
+                                                max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=None)
             self.dataset_test_memory_all = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                         label_file = os.path.join(root, 'tst_label.json'),
+                                                         label_file=os.path.join(root, 'tst_label.json'),
                                                          transform=self.val_transform, len_memory=1000)
 
         classset = torch.randperm(self.dataset_test_all.num_classes)[:nclass]
@@ -692,7 +689,7 @@ class ImageNet30samplesDataModule(ImageNet100DataModule):
 
         self.max_qeury_num_samples = 100
         self.dataset_root = 'ILSVRC_30samples'
-        self.len_memory = 30
+        self.len_shot = 30
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
@@ -705,7 +702,7 @@ class ImageNet40samplesDataModule(ImageNet100DataModule):
 
         self.max_qeury_num_samples = 10
         self.dataset_root = 'ILSVRC_40samples'
-        self.len_memory = 30
+        self.len_shot = 30
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
@@ -718,7 +715,7 @@ class MiniImagenetDataModule(ImageNet100DataModule):
 
         self.max_qeury_num_samples = 595
         self.dataset_root = 'miniimagenet'
-        self.len_memory = 5
+        self.len_shot = 5
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
@@ -732,7 +729,7 @@ class ImageNet130samplesDataModule(ImageNet100DataModule):
         self.max_qeury_num_samples = 100
         self.dataset_root = 'ILSVRC_130samples'
         # self.memory_split = 100
-        self.len_memory = 30
+        self.len_shot = 30
         # self.total_samples = 130  # to make it length-agnostic
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
@@ -747,7 +744,7 @@ class ImageNet500samplesDataModule(ImageNet100DataModule):
         self.max_qeury_num_samples = 300
         self.dataset_root = 'ILSVRC_500samples'
         # self.memory_split = 400
-        self.len_memory = 200
+        self.len_shot = 200
         # self.total_samples = 500  # to make it length-agnostic
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
@@ -761,11 +758,24 @@ class ImageNetFullsamplesDataModule(ImageNet100DataModule):
 
         self.max_qeury_num_samples = 1100
         self.dataset_root = 'ILSVRC_1300samples'
-        self.len_memory = 200
+        self.len_shot = 200
         # self.total_samples = 1300  # to make it length-agnostic
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
+
+
+class ImageNetUnseen16shotDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 200  # val/test queries
+        self.dataset_root = 'ILSVRC_unseen16shots'
+        self.len_shot = 16
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['test']
 
 
 class ImageNet100DataModule_Standard(ImageNet100DataModule):
@@ -782,13 +792,16 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
         self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=50, transform=self.val_transform, is_memory=False, len_memory=0)
-        self.dataset_test = self.dataset_val
+                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+        self.dataset_test = self.dataset(root, train=False, sub_dirs=self.test_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=self.max_qeury_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
 
-        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_memory=self.len_memory)
+        self.dataset_train_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+                                                      label_file=os.path.join(root, 'standard_label.json'),
+                                                      transform=self.train_transform,
+                                                      len_memory=1000)
         self.dataset_val_memory = self.dataset_train_memory
         self.dataset_test_memory = self.dataset_train_memory
 
@@ -797,11 +810,24 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         self.dataset_test_text = self.dataset_train_text
 
 
+class ImageNetSeen16shotDataModule(ImageNet100DataModule_Standard):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_qeury_num_samples = 200  # val/test queries
+        self.dataset_root = 'ILSVRC_seen16shots'
+        self.len_shot = 16
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['test']
+
+
 class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset_root = 'CUB_200_2011'
-        self.len_memory = 5 # each classes in dataset have 29~30 images each
+        self.len_shot = 5 # each classes in dataset have 29~30 images each
 
         self.train_subdirs = ['Train']
         self.val_subdirs = ['Val']
@@ -818,7 +844,7 @@ class ImageNet1Kclasses160samples(ImageNet100DataModule):
         self.max_classes = None
         self.max_qeury_num_samples = 130  # 16
         self.dataset_root = 'ILSVRC_1Kclasses160samples'
-        self.len_memory = 30 # shot # 16
+        self.len_shot = 30 # shot # 16
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
@@ -829,9 +855,9 @@ class ImageNet1Kclasses160samples(ImageNet100DataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_memory=0)
+                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_shot=0)
         self.dataset_test = self.dataset_val
 
         self.dataset_train_shot = self.dataset_train  # becomes equivalent to dataset_train
@@ -839,15 +865,15 @@ class ImageNet1Kclasses160samples(ImageNet100DataModule):
         self.dataset_test_shot = self.dataset_train
 
         self.dataset_train_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file = os.path.join(root, 'standard_label.json'),
+                                                      label_file=os.path.join(root, 'standard_label.json'),
                                                       transform=self.train_transform,
                                                       len_memory=1000)
         self.dataset_val_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file = os.path.join(root, 'standard_label.json'),
+                                                      label_file=os.path.join(root, 'standard_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
         self.dataset_test_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file = os.path.join(root, 'standard_label.json'),
+                                                      label_file=os.path.join(root, 'standard_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
 
@@ -866,7 +892,7 @@ class ImageNet100classes160samples(ImageNet100DataModule):
         self.max_classes = None
         self.max_qeury_num_samples = 100
         self.dataset_root = 'ILSVRC_100classes160samples'
-        self.len_memory = 30
+        self.len_shot = 30
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['val']
@@ -877,13 +903,13 @@ class ImageNet100classes160samples(ImageNet100DataModule):
         wiki_dir = 'wiki'
 
         self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_memory=self.len_memory)
+                                          max_classes=self.max_classes, max_samples=self.max_qeury_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_memory=0)
+                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_shot=0)
         self.dataset_test = self.dataset_val
 
         self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_memory=self.len_memory)
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_shot=self.len_shot)
         self.dataset_val_memory = self.dataset_train_memory
         self.dataset_test_memory = self.dataset_train_memory
 
@@ -980,6 +1006,8 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'imagenet500samples' : ImageNet500samplesDataModule,
                     'imagenetfullsamples' : ImageNetFullsamplesDataModule,
                     'cub2011standard' : Cub2011DataModule_Standard,
+                    'imagenetseen16shots' : ImageNetSeen16shotDataModule,
+                    'imagenetunseen16shots' : ImageNetUnseen16shotDataModule,
                     }
 
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
