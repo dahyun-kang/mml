@@ -170,7 +170,7 @@ class MemoryModularLearner(nn.Module):
 
             self.img_proto[split] = img_proto
 
-            print(f"\n{split} class prototype info: dim_of_samples = {img_proto.shape[0]}x{img_proto.shape[1]}")
+            print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
 
         trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
         self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
