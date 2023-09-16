@@ -117,17 +117,37 @@ class MemoryModularLearner(nn.Module):
                 torch.save(img_embed, img_embed_path) ; torch.save(img_label, img_label_path)
                 torch.save(txt_embed, txt_embed_path) ; torch.save(txt_label, txt_label_path)
 
-            txt_label_idx = txt_label.unique().sort()[0]
-            txt_proto = [txt_embed[txt_label == c].mean(dim=0) for c in txt_label_idx]
-            txt_proto = torch.stack(txt_proto, dim=0)  # C, D
-
             self.img_embed[split] = img_embed ; self.txt_embed[split] = txt_embed
             self.img_label[split] = img_label ; self.txt_label[split] = txt_label  # actually not used in current forward
-            self.txt_proto[split] = txt_proto
 
             num_samples = int(img_embed.shape[0]) // (int(max(img_label)) + 1)
             print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
 
+            # memory-based prototype generation
+            img_proto_list = []
+            for c in torch.unique(img_label):
+                img_embed_c = img_embed[img_label == c]
+                txt_embed_c = txt_embed[txt_label == c]
+                img_embed_c_l2 = F.normalize(img_embed_c, dim=-1, p=2)
+                txt_embed_c_l2 = F.normalize(txt_embed_c, dim=-1, p=2)
+                sim = torch.einsum('n d, m d -> n m', img_embed_c_l2, txt_embed_c_l2)
+
+                # img: row-wise sum
+                img_sim = sim.sum(dim=-1)
+                _, img_indices = img_sim.topk(k=16, dim=-1, largest=True, sorted=True)  # TODO: make it args
+                img_proto_list.append(img_embed_c[img_indices].mean(dim=0))
+
+                # txt: col-wise sum
+                txt_sim = sim.sum(dim=0)
+                _, txt_indices = txt_sim.topk(k=16, dim=-1, largest=True, sorted=True)  # TODO: make it args
+                txt_proto_list.append(txt_embed_c[txt_indices].mean(dim=0))
+
+            self.img_proto[split] = torch.stack(img_proto_list, dim=0)
+            self.txt_proto[split] = torch.stack(txt_proto_list, dim=0)
+
+            print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
+
+        '''
         # load few-shot prototype
         for split, img_shot_loader in \
                 zip(['trn', 'val', 'tst'],
@@ -137,8 +157,6 @@ class MemoryModularLearner(nn.Module):
 
             img_proto_path = osp.join(self.cachedir, f'{split}_img_proto.pth')
 
-            # clean few-shot image samples
-            '''
             if osp.exists(img_proto_path):
                 print(f'\n *** [{split}] loading class prototype checkpoints from {self.cachedir}. *** \n')
                 img_proto = torch.load(img_proto_path)
@@ -150,27 +168,7 @@ class MemoryModularLearner(nn.Module):
                 img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
                 img_proto = torch.stack(img_proto, dim=0)  # C, D
                 # torch.save(img_proto, img_proto_path)
-            '''
-
-            img_embed = self.img_embed[split] ; txt_embed = self.txt_embed[split]
-            img_label = self.img_label[split] ; txt_label = self.txt_label[split]
-
-            img_proto_list = []
-            for c in torch.unique(img_label):
-                img_embed_c = img_embed[img_label == c]
-                txt_embed_c = txt_embed[txt_label == c]
-                img_embed_c_l2 = F.normalize(img_embed_c, dim=-1, p=2)
-                txt_embed_c_l2 = F.normalize(txt_embed_c, dim=-1, p=2)
-                sim = torch.einsum('n d, m d -> n m', img_embed_c_l2, txt_embed_c_l2)
-                sim = sim.sum(dim=-1)
-                _, indices = sim.topk(k=16, dim=-1, largest=True, sorted=True)  # TODO: make it args
-                img_proto_list.append(img_embed_c[indices].mean(dim=0))
-
-            img_proto = torch.stack(img_proto_list, dim=0)
-
-            self.img_proto[split] = img_proto
-
-            print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
+        '''
 
         trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
         self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
