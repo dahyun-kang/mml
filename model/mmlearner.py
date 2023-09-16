@@ -2,6 +2,7 @@
 
 import os
 import os.path as osp
+import numpy as np
 import clip
 from tqdm import tqdm
 
@@ -70,6 +71,7 @@ class MemoryModularLearner(nn.Module):
             model.aux_classifier = nn.Identity()
 
         model.requires_grad_(requires_grad=False)
+        # model.visual.requires_grad_(requires_grad=False)  # RAC
         '''
         for m in model.modules():
             if isinstance(m, nn.LayerNorm):
@@ -90,6 +92,7 @@ class MemoryModularLearner(nn.Module):
         self.txt_embed = {'trn': None, 'val': None, 'tst': None}
         self.txt_label = {'trn': None, 'val': None, 'tst': None}
         self.txt_proto = {'trn': None, 'val': None, 'tst': None}
+        self.cls_label = {'trn': None, 'val': None, 'tst': None}
 
         # load or save memory
         for split, img_loader, txt_loader in \
@@ -125,6 +128,7 @@ class MemoryModularLearner(nn.Module):
 
             # memory-based prototype generation
             img_proto_list = []
+            txt_proto_list = []
             for c in torch.unique(img_label):
                 img_embed_c = img_embed[img_label == c]
                 txt_embed_c = txt_embed[txt_label == c]
@@ -146,6 +150,16 @@ class MemoryModularLearner(nn.Module):
             self.txt_proto[split] = torch.stack(txt_proto_list, dim=0)
 
             print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
+
+            # class text label  # RAC
+            '''
+            txtlabels = []
+            for target in range(len(img_label.unique())):
+                txtlabel = img_loader().dataset.txtlabels[target].split(', ')[0]
+                txtlabels.append(txtlabel)
+
+            self.cls_label[split] = np.array(txtlabels)
+            '''
 
         '''
         # load few-shot prototype
@@ -344,7 +358,7 @@ class MemoryModularLearner(nn.Module):
         def retrieve_knn(x, mem, k):
             with torch.no_grad():
                 x_ = F.normalize(x, p=2, dim=-1)
-                mem_ = F.normalize(mem, p=2, dim=-1)  # fix at the beginning
+                mem_ = F.normalize(mem, p=2, dim=-1)  # TODO: fix at the beginning
                 sim = torch.einsum('b d, n d -> b n', x_, mem_)
                 _, indices = sim.topk(k=k, dim=-1, largest=True, sorted=True)
 
@@ -379,3 +393,40 @@ class MemoryModularLearner(nn.Module):
         sim = sim_txt + sim_img
 
         return sim
+
+    def forward_RAC(self, x, y, stage):
+        def retrieve_knn(x, mem, label, cls_label, k):
+            with torch.no_grad():
+                x_ = F.normalize(x, p=2, dim=-1)
+                mem_ = F.normalize(mem, p=2, dim=-1)  # fix at the beginning
+                sim = torch.einsum('b d, n d -> b n', x_, mem_)
+                _, indices = sim.topk(k=k, dim=-1, largest=True, sorted=True)
+
+                # N, D [[B, K] -> B, K, D
+                knnlabel = label[indices]
+                cls_txt = cls_label[knnlabel]
+
+                cls_txt = [" ".join(t)  for t in cls_txt]
+                cls_txt = clip.tokenize(cls_txt, truncate=True)
+                return cls_txt
+
+        with torch.no_grad():
+            clipfeat = self.backbone(x)
+            knn_cls_tokens = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], label=self.img_label[stage], cls_label=self.cls_label[stage], k=self.args.ik)
+
+        retrfeat = self.backbone.encode_text(knn_cls_tokens.to(clipfeat.device))
+
+        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
+        retrfeat_ = F.normalize(retrfeat, dim=-1, p=2)
+        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)  # to handle unseen
+
+        clip_logit = torch.einsum('c d, b d -> b c', proto_img_, clipfeat_)
+        retr_logit = torch.einsum('c d, b d -> b c', proto_img_, retrfeat_)
+
+        # even worse
+        # clip_logit_= F.normalize(clip_logit, dim=-1, p=2)
+        # retr_logit = F.normalize(retr_logit, dim=-1, p=2)
+
+        logit = (clip_logit + retr_logit) * self.args.multemp
+
+        return logit

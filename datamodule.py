@@ -963,7 +963,6 @@ class Webvision_dataset(Dataset):
                 self.targets.append(target)
                 num_samples_count[target] += 1
 
-        '''
         with open(os.path.join(root, 'info/synsets.txt')) as f:
             lines = f.readlines()
 
@@ -975,7 +974,6 @@ class Webvision_dataset(Dataset):
             if nxxxxxxxx in synset_set:
                 target = idxs_cls[nxxxxxxxx]
                 self.txtlabels[target] = classtxtlabel
-        '''
 
     def __getitem__(self, index):
         img_path = self.img_path[index]

@@ -133,6 +133,7 @@ class MemoryModularLearnerTrainer(LightningModule):
     def configure_optimizers(self):
         param_list = []
         for k, v in self.learner.named_parameters():
+            # if 'backbone.transformer.resblocks.11' in k or 'ln_final' in k:  # RAC
             if not 'backbone' in k:  # or 'ln' in k:
                 param_list.append(v)
         optimizer = torch.optim.Adam(
