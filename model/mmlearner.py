@@ -12,6 +12,7 @@ import torch.nn.functional as F
 import torchvision
 
 from model.transformer import TransformerEncoderLayer, ResidualAttentionBlock
+from text_data.prompt_template import prompt_templates
 
 import pdb
 
@@ -93,6 +94,7 @@ class MemoryModularLearner(nn.Module):
         self.txt_label = {'trn': None, 'val': None, 'tst': None}
         self.txt_proto = {'trn': None, 'val': None, 'tst': None}
         self.cls_label = {'trn': None, 'val': None, 'tst': None}
+        self.cls_prompt = {'trn': None, 'val': None, 'tst': None}
 
         # load or save memory
         for split, img_loader, txt_loader in \
@@ -152,14 +154,24 @@ class MemoryModularLearner(nn.Module):
             print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
 
             # class text label  # RAC
-            '''
             txtlabels = []
             for target in range(len(img_label.unique())):
-                txtlabel = img_loader().dataset.txtlabels[target].split(', ')[0]
+                txtlabel = img_loader().dataset.txtlabels[target] # .split(', ')[0]
                 txtlabels.append(txtlabel)
 
             self.cls_label[split] = np.array(txtlabels)
-            '''
+
+            if self.args.runfree == 'clipzeroshot':
+                txtlabelembed = []
+                for txtlabel in self.cls_label[split]:
+                    txtlabel = [template.format(t) for template in prompt_templates]
+                    txtlabeltokens = clip.tokenize(txtlabel).cuda()
+                    with torch.inference_mode():
+                        txtlabelproto = self.backbone.encode_text(txtlabeltokens)
+                        txtlabelproto = F.normalize(txtlabelproto, p=2, dim=-1)
+                        txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
+                    txtlabelembed.append(txtlabelproto)
+                self.cls_prompt[split] = torch.stack(txtlabelembed, dim=0)
 
         '''
         # load few-shot prototype
@@ -302,6 +314,17 @@ class MemoryModularLearner(nn.Module):
         sim = torch.stack(list(map(majority_vote, globalcls)))
 
         return sim
+
+    # CUDA_VISIBLE_DEVICES=5 python main.py --datapath /home/dahyun/datasets/ --backbone clipvitb --dataset imagenetseen16shots --logpath 0914_p23_16shot --runfree clipzeroshot --eval --nowandb
+    def forward_clipzeroshot(self, x, y, stage=None):
+        with torch.no_grad():
+            clipfeat = self.backbone(x)
+            clipfeat_ = F.normalize(clipfeat.to(x.device), dim=-1, p=2)
+            proto_txt_ = F.normalize(self.cls_prompt[stage].to(x.device), dim=-1, p=2)
+
+            sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_)
+
+        return sim_clip
 
     def forward_p15_1_crossmodal_self_imgknn_textknn_probfusion_nokvinput(self, x, y, stage):
         def retrieve_knn(x, mem, k):

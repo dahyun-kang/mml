@@ -39,7 +39,7 @@ if __name__ == '__main__':
     parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     # parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
-    parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto'], help="Run a model don't have any differentiable parameters")
+    parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto', 'clipzeroshot'], help="Run a model don't have any differentiable parameters")
     parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
     parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
     parser.add_argument('--Decoupled', type=str, default=None, choices=['joint', 'cRT', 'tau', 'feat_extract'], help='Flag to run reproducing expriement of Decoupled Learning')
@@ -127,6 +127,8 @@ if __name__ == '__main__':
                 model.learner.forward = model.learner.forward_nakata22
             elif args.runfree == 'naiveproto':
                 model.learner.forward = model.learner.forward_naive_protomatching
+            elif args.runfree == 'clipzeroshot':
+                model.learner.forward = model.learner.forward_clipzeroshot
 
         trainer = Trainer(
             max_epochs=args.maxepochs,
