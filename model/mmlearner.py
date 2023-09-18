@@ -86,25 +86,32 @@ class MemoryModularLearner(nn.Module):
         # moved to self.on_fit_start; should be called after params being loaded to cuda
         return generic_tokens
 
-    def _load_memory_and_prototype(self):
-        self.img_embed = {'trn': None, 'val': None, 'tst': None}
-        self.img_label = {'trn': None, 'val': None, 'tst': None}
-        self.img_proto = {'trn': None, 'val': None, 'tst': None}
-        self.txt_embed = {'trn': None, 'val': None, 'tst': None}
-        self.txt_label = {'trn': None, 'val': None, 'tst': None}
-        self.txt_proto = {'trn': None, 'val': None, 'tst': None}
-        self.cls_label = {'trn': None, 'val': None, 'tst': None}
-        self.cls_prompt = {'trn': None, 'val': None, 'tst': None}
+    def _load_memory_and_prototype(self, splits=['trn', 'val']):
+
+        self.img_embed = {}
+        self.img_label = {}
+        self.img_proto = {}
+        self.txt_embed = {}
+        self.txt_label = {}
+        self.txt_proto = {}
+        self.cls_label = {}
+        self.cls_prmpt = {}
+
+        for split in splits:
+            self.img_embed[split] = None
+            self.img_label[split] = None
+            self.img_proto[split] = None
+            self.txt_embed[split] = None
+            self.txt_label[split] = None
+            self.txt_proto[split] = None
+            self.cls_label[split] = None
+            self.cls_prmpt[split] = None
 
         # load or save memory
-        for split, img_loader, txt_loader in \
-                zip(['trn', 'val', 'tst'],
-                    [self.dm.train_memory_dataloader,
-                        self.dm.val_memory_dataloader,
-                        self.dm.test_memory_dataloader],
-                    [self.dm.train_text_dataloader,
-                        self.dm.val_text_dataloader,
-                        self.dm.test_text_dataloader]):
+        for split in splits:
+            img_loader = self.dm.memory_dataloader(split)  # TODO: rename the loader with imgmem
+            txt_loader = self.dm.text_dataloader(split)  # TODO: rename the loader with txtmem
+
             img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
             img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
             txt_embed_path = osp.join(self.cachedir, f'{split}_txt_embed.pth')
@@ -156,7 +163,7 @@ class MemoryModularLearner(nn.Module):
             # class text label  # RAC
             txtlabels = []
             for target in range(len(img_label.unique())):
-                txtlabel = img_loader().dataset.txtlabels[target] # .split(', ')[0]
+                txtlabel = img_loader.dataset.txtlabels[target] # .split(', ')[0]
                 txtlabels.append(txtlabel)
 
             self.cls_label[split] = np.array(txtlabels)
@@ -171,33 +178,23 @@ class MemoryModularLearner(nn.Module):
                         txtlabelproto = F.normalize(txtlabelproto, p=2, dim=-1)
                         txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
                     txtlabelembed.append(txtlabelproto)
-                self.cls_prompt[split] = torch.stack(txtlabelembed, dim=0)
+                self.cls_prmpt[split] = torch.stack(txtlabelembed, dim=0)
 
         '''
-        # load few-shot prototype
-        for split, img_shot_loader in \
-                zip(['trn', 'val', 'tst'],
-                    [self.dm.train_shot_dataloader,
-                        self.dm.val_shot_dataloader,
-                        self.dm.test_shot_dataloader]):
-
+        # generate few-shot prototype
+        for split in splits:
+            imgshot_loader = self.dm.shot_dataloader[split]
             img_proto_path = osp.join(self.cachedir, f'{split}_img_proto.pth')
 
-            if osp.exists(img_proto_path):
-                print(f'\n *** [{split}] loading class prototype checkpoints from {self.cachedir}. *** \n')
-                img_proto = torch.load(img_proto_path)
-            else:
-                print(f'\n *** [{split}] embed/label not found. Generating class prototype checkpoints and saving them at {self.cachedir}. *** \n')
-                img_embed, img_label = self._init_memory(img_shot_loader, split, modality='img')
+            img_embed, img_label = self._init_memory(imgshot_loader, split, modality='img')
 
-                img_label_idx = img_label.unique().sort()[0]
-                img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
-                img_proto = torch.stack(img_proto, dim=0)  # C, D
-                # torch.save(img_proto, img_proto_path)
+            img_label_idx = img_label.unique().sort()[0]
+            img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
+            img_proto = torch.stack(img_proto, dim=0)  # C, D
         '''
 
-        trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
-        self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
+        # trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
+        # self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
 
     def _load_episodic_test_memory_and_prototype(self):
         split = 'tst'  # by default
@@ -250,7 +247,7 @@ class MemoryModularLearner(nn.Module):
         label_list = []
 
         with torch.inference_mode():
-            for x, y in tqdm(loader(), desc=f'Generating {modality} {split} emb'):
+            for x, y in tqdm(loader, desc=f'Generating {modality} {split} emb'):
                 x = x.cuda()
                 if modality == 'img':
                     out = backbone(x)  # = backbone.encode_image(x)
@@ -320,7 +317,7 @@ class MemoryModularLearner(nn.Module):
         with torch.no_grad():
             clipfeat = self.backbone(x)
             clipfeat_ = F.normalize(clipfeat.to(x.device), dim=-1, p=2)
-            proto_txt_ = F.normalize(self.cls_prompt[stage].to(x.device), dim=-1, p=2)
+            proto_txt_ = F.normalize(self.cls_prmpt[stage].to(x.device), dim=-1, p=2)
 
             sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_)
 
