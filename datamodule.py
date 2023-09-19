@@ -116,7 +116,7 @@ class AbstractDataModule(LightningDataModule):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = None
-        self.dataset_train = self.dataset_val = None
+        self.dataset_query = {'trn': None, 'val': None}
         self.sampler = None
         if transform_type == 'CLIP':
             self.train_transform = Transforms.clip_transform(imgsize)
@@ -133,9 +133,8 @@ class AbstractDataModule(LightningDataModule):
         return None
 
     def setup(self, stage: str):
-        self.dataset_train = self.dataset(root=self.hparams.datadir, split=self.hparams.train_split, transform=self.train_transform, download=True)
-        self.dataset_val = self.dataset(root=self.hparams.datadir, split=self.hparams.val_split, transform=self.val_transform, download=True)
-
+        self.dataset_query['trn'] = self.dataset(root=self.hparams.datadir, split=self.hparams.train_split, transform=self.train_transform, download=True)
+        self.dataset_query['val'] = self.dataset(root=self.hparams.datadir, split=self.hparams.val_split, transform=self.val_transform, download=True)
 
     def sampler_loader(self):
 
@@ -175,15 +174,15 @@ class AbstractDataModule(LightningDataModule):
 
     def train_dataloader(self):
         self.sampler_loader()
-        return DataLoader(self.dataset_train, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False if self.sampler else True, sampler=self.sampler)
+        return DataLoader(self.dataset_query['trn'], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False if self.sampler else True, sampler=self.sampler)
 
     def unshuffled_train_dataloader(self):
-        if self.dataset_train is None:
+        if self.dataset_query['trn'] is None:
             self.setup(stage='init')
-        return DataLoader(self.dataset_train, batch_size=512, num_workers=self.hparams.num_workers, shuffle=False)
+        return DataLoader(self.dataset_query['trn'], batch_size=512, num_workers=self.hparams.num_workers, shuffle=False)
 
     def val_dataloader(self):
-        return DataLoader(self.dataset_val, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+        return DataLoader(self.dataset_query['val'], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     def test_dataloader(self):
         return self.val_dataloader()
@@ -677,15 +676,19 @@ class ImageNet100DataModule(AbstractDataModule):
             mem_img_path += mem_img_path_c
             mem_targets += [i] * len(mem_img_path_c)
 
-        self.dataset_test = SubsetDataset(data=query_img_path, targets=query_targets, transform=self.val_transform)
-        self.dataset_test_shot = SubsetDataset(data=shot_img_path, targets=shot_targets, transform=self.val_transform)
-        self.dataset_test_memory = SubsetDataset(data=mem_img_path, targets=mem_targets, transform=self.val_transform)
+        self.dataset_query = {}
+        self.dataset_shot = {}
+        self.dataset_memory = {}
+        self.dataset_text = {}
 
-        self.dataset_test_text = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
+        self.dataset_query['tst'] = SubsetDataset(data=query_img_path, targets=query_targets, transform=self.val_transform)
+        self.dataset_shot['tst'] = SubsetDataset(data=shot_img_path, targets=shot_targets, transform=self.val_transform)
+        self.dataset_memory['tst'] = SubsetDataset(data=mem_img_path, targets=mem_targets, transform=self.val_transform)
+        self.dataset_text['tst'] = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
 
     @property
     def num_classes(self) -> int:
-        return self.dataset_train.num_classes
+        return self.dataset_query['trn'].num_classes
 
 
 class ImageNet1000DataModule(ImageNet100DataModule):
@@ -876,6 +879,7 @@ class ImageNet1Kclasses160samples(ImageNet100DataModule):
         self.test_subdirs = ['val']
 
     def setup(self, stage: str):
+        assert False, "replace dataset_train with dataset_query['trn']"
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
         wiki_dir = 'wiki'
@@ -945,7 +949,7 @@ class ImageNet100classes160samples(ImageNet100DataModule):
 
 
 class Webvision_dataset(Dataset):
-    def __init__(self, root='webvision', label_file = '', max_classes = None, transform=None, len_memory=1000):
+    def __init__(self, root='webvision', label_file = '', max_classes = None, transform=None, len_memory=1000, webvisionsource='google'):
         self.transform = transform
 
         # n0xxxxxxx -> 'web' 0 ~ 999
@@ -963,7 +967,8 @@ class Webvision_dataset(Dataset):
         synset_set = idxs_cls.keys()  # [nxxxxxxxx, ..., nxxxxxxxx]
         num_classes = len(synset_set)
 
-        with open(os.path.join(root, 'info/train_filelist_google.txt')) as f:
+        # webvisionsource = {'google'/ 'flickr'}
+        with open(os.path.join(root, f'info/train_filelist_{webvisionsource}.txt')) as f:
             lines = f.readlines()
 
         self.img_path = []

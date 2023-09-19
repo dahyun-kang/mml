@@ -124,6 +124,7 @@ class MemoryModularLearner(nn.Module):
             else:
                 print(f'\n *** [{split}] embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n')
                 if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
+                torch.multiprocessing.set_sharing_strategy('file_system')
                 img_embed, img_label = self._init_memory(img_loader, split, modality='img')
                 txt_embed, txt_label = self._init_memory(txt_loader, split, modality='txt')
                 torch.save(img_embed, img_embed_path) ; torch.save(img_label, img_label_path)
@@ -138,22 +139,29 @@ class MemoryModularLearner(nn.Module):
             # memory-based prototype generation
             img_proto_list = []
             txt_proto_list = []
-            for c in torch.unique(img_label):
+            for c in torch.unique(txt_label):
                 img_embed_c = img_embed[img_label == c]
                 txt_embed_c = txt_embed[txt_label == c]
                 img_embed_c_l2 = F.normalize(img_embed_c, dim=-1, p=2)
                 txt_embed_c_l2 = F.normalize(txt_embed_c, dim=-1, p=2)
                 sim = torch.einsum('n d, m d -> n m', img_embed_c_l2, txt_embed_c_l2)
 
-                # img: row-wise sum
-                img_sim = sim.sum(dim=-1)
-                _, img_indices = img_sim.topk(k=16, dim=-1, largest=True, sorted=True)  # TODO: make it args
-                img_proto_list.append(img_embed_c[img_indices].mean(dim=0))
+                txt_k = min(len(txt_embed_c), 16)  # TODO: make it args
+                img_k = min(len(img_embed_c), 16)  # TODO: make it args
 
                 # txt: col-wise sum
                 txt_sim = sim.sum(dim=0)
-                _, txt_indices = txt_sim.topk(k=16, dim=-1, largest=True, sorted=True)  # TODO: make it args
+                _, txt_indices = txt_sim.topk(k=txt_k, dim=-1, largest=True, sorted=True)
                 txt_proto_list.append(txt_embed_c[txt_indices].mean(dim=0))
+
+                if len(img_embed_c) == 0:  # flickr doesn't have c=262th class!! x.x
+                    img_proto_list.append(txt_embed_c[txt_indices].mean(dim=0))
+                    continue
+
+                # img: row-wise sum
+                img_sim = sim.sum(dim=-1)
+                _, img_indices = img_sim.topk(k=img_k, dim=-1, largest=True, sorted=True)
+                img_proto_list.append(img_embed_c[img_indices].mean(dim=0))
 
             self.img_proto[split] = torch.stack(img_proto_list, dim=0)
             self.txt_proto[split] = torch.stack(txt_proto_list, dim=0)
