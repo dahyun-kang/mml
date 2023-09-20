@@ -428,8 +428,10 @@ class ImageNet100_Dataset(Dataset):
                 if is_memory:
                     num_samples_i = self.len_shot if self.len_shot else len(imgdirs)
                     imgdirs = imgdirs[-num_samples_i:]
+                    # imgdirs = imgdirs[200:]  # full
                 else:
                     num_samples_i = min(max_samples, len(imgdirs) - self.len_shot) if max_samples else len(imgdirs) - self.len_shot
+                    # num_samples_i = max_samples if max_samples else len(imgdirs) - self.len_shot  # 428
                     imgdirs = imgdirs[:num_samples_i]
 
                 for imgdir in imgdirs:
@@ -568,12 +570,16 @@ class ImageNet100DataModule(AbstractDataModule):
                                           max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
         self.dataset_query['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
-
         self.dataset_shot['trn'] = self.dataset_query['trn']
         self.dataset_shot['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
+                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
         self.dataset_shot['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
+                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
+
+        assert len(set(self.dataset_query['val'].img_path).intersection(set(self.dataset_shot['val'].img_path))) == 0
+        assert len(set(self.dataset_query['tst'].img_path).intersection(set(self.dataset_shot['tst'].img_path))) == 0
 
         # Remove the code duplicates
         self.dataset_memory['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
@@ -793,6 +799,19 @@ class ImageNetUnseen16shotDataModule(ImageNet100DataModule):
         self.max_query_num_samples = 200  # val/test queries
         self.dataset_root = 'ILSVRC_unseen16shots'
         self.len_shot = 16
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['test']
+
+
+class ImageNetUnseenfullshotDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_query_num_samples = 200  # val/test queries
+        self.dataset_root = 'ILSVRC_unseenfullshots'
+        self.len_shot = 1100
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
@@ -1037,6 +1056,7 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'cub2011standard' : Cub2011DataModule_Standard,
                     'imagenetseen16shots' : ImageNetSeen16shotDataModule,
                     'imagenetunseen16shots' : ImageNetUnseen16shotDataModule,
+                    'imagenetunseenfullshots' : ImageNetUnseenfullshotDataModule,
                     }
 
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
