@@ -14,28 +14,8 @@ from sampler.ClassAwareSampler import ClassAwareSampler
 from sampler.WeightedSampler import WeightedDistributedSampler
 from text_data.preprocess import SentPreProcessor
 
+
 class Transforms:
-    @staticmethod
-    def train_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.Resize((imgsize, imgsize)),  # TODO: randomcrop?
-                torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ]
-        )
-
-    @staticmethod
-    def val_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.Resize((imgsize, imgsize)),
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ]
-        )
-
     @staticmethod
     def clip_transform(n_px):
         '''
@@ -58,57 +38,6 @@ class Transforms:
             torchvision.transforms.ToTensor(),
             torchvision.transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
         ])
-
-    @staticmethod
-    def LT_train_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.RandomResizedCrop(imgsize),
-                torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0),
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ]
-        )
-
-    @staticmethod
-    def LT_val_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.Resize(256),
-                torchvision.transforms.CenterCrop(imgsize),
-                torchvision.transforms.ToTensor(),
-                torchvision.transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ]
-        )
-
-
-    '''
-    # use these for training from scratch
-    from pl_bolts.transforms.dataset_normalizations import cifar10_normalization
-
-    @staticmethod
-    def cifar_train_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.RandomCrop(32, padding=4),
-                torchvision.transforms.Resize((imgsize, imgsize)),
-                torchvision.transforms.RandomHorizontalFlip(),
-                torchvision.transforms.ToTensor(),
-                cifar10_normalization(),
-            ]
-        )
-
-    @staticmethod
-    def cifar_val_transform(imgsize):
-        return torchvision.transforms.Compose(
-            [
-                torchvision.transforms.Resize((imgsize, imgsize)),
-                torchvision.transforms.ToTensor(),
-                cifar10_normalization(),
-            ]
-        )
-    '''
 
 
 class AbstractDataModule(LightningDataModule):
@@ -190,162 +119,6 @@ class AbstractDataModule(LightningDataModule):
     def predict_dataloader(self):
         return self.val_dataloader()
 
-class CIFAR10DataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.save_hyperparameters()
-        self.dataset = torchvision.datasets.CIFAR10
-        self.max_num_samples = 5000
-
-    def setup(self, stage: str):
-        self.dataset_train = self.dataset(root=self.hparams.datadir, train=True, transform=self.train_transform, download=True)
-        self.dataset_val = self.dataset(root=self.hparams.datadir, train=False, transform=self.val_transform, download=True)
-
-    @property
-    def num_classes(self) -> int:
-        return 10
-
-class CIFAR100DataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.save_hyperparameters()
-        self.dataset = torchvision.datasets.CIFAR100
-        self.max_num_samples = 500
-
-    def setup(self, stage: str):
-        self.dataset_train = self.dataset(root=self.hparams.datadir, train=True, transform=self.train_transform, download=True)
-        self.dataset_val = self.dataset(root=self.hparams.datadir, train=False, transform=self.val_transform, download=True)
-
-    @property
-    def num_classes(self) -> int:
-        return 100
-
-
-class Food101DataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(train_split='train', val_split='test', *args, **kwargs)
-        self.dataset = torchvision.datasets.Food101
-        self.max_num_samples = 750
-
-    @property
-    def num_classes(self) -> int:
-        return 101
-
-
-class Places365DataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(train_split='train-standard', val_split='val', *args, **kwargs)
-        self.dataset = torchvision.datasets.Places365
-        self.max_num_samples = 500  # max num sample is actually ~4K
-
-    def setup(self, stage: str):
-        # small=True for small-image-size dataset
-        self.dataset_train = self.dataset(root=self.hparams.datadir, split=self.hparams.train_split, transform=self.train_transform, download=False, small=True)
-        self.dataset_val = self.dataset(root=self.hparams.datadir, split=self.hparams.val_split, transform=self.val_transform, download=False, small=True)
-
-    @property
-    def num_classes(self) -> int:
-        return 365
-
-
-class FGVCAircraftDataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(train_split='train', val_split='val', *args, **kwargs)
-        self.dataset = torchvision.datasets.FGVCAircraft
-        self.max_num_samples = 32
-
-    @property
-    def num_classes(self) -> int:
-        return 100
-
-
-class STL10DataModule(AbstractDataModule):  # STL images are 96x96 pixels
-    def __init__(self, *args, **kwargs):
-        super().__init__(train_split='train', val_split='test', *args, **kwargs)
-        self.dataset = torchvision.datasets.STL10
-        self.max_num_samples = 500
-
-    @property
-    def num_classes(self) -> int:
-        return 10
-
-class LT_Dataset(Dataset):
-    def __init__(self, root, txt, transform=None):
-        self.img_path = []
-        self.targets = []
-        self.transform = transform
-        with open(txt) as f:
-            for line in f:
-                self.img_path.append(os.path.join(root, line.split()[0]))
-                self.targets.append(int(line.split()[1]))
-
-    def __len__(self):
-        return len(self.targets)
-
-    def __getitem__(self, index):
-
-        path = self.img_path[index]
-        label = self.targets[index]
-
-        with open(path, 'rb') as f:
-            sample = Image.open(f).convert('RGB')
-
-        if self.transform is not None:
-            sample = self.transform(sample)
-
-        return sample, label
-
-class ImageNet_LT_DataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = LT_Dataset
-        self.max_num_samples = 4
-
-    def setup(self, stage: str):
-        root = os.path.join(self.hparams.datadir, 'ImageNet')
-        txt = './LT_txt/ImageNet_LT'
-
-        self.dataset_train = self.dataset(root=root, txt=os.path.join(txt, 'ImageNet_LT_train.txt'), transform=self.train_transform)
-        self.dataset_val = self.dataset(root=root, txt=os.path.join(txt, 'ImageNet_LT_val.txt'), transform=self.val_transform)
-        self.dataset_test = self.dataset(root=root, txt=os.path.join(txt, 'ImageNet_LT_test.txt'), transform=self.val_transform)
-
-    def test_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-    @property
-    def num_classes(self) -> int:
-        return 1000
-
-class Places_LT_DataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = LT_Dataset
-        self.max_num_samples = 5
-
-    def setup(self, stage: str):
-        root = os.path.join(self.hparams.datadir, 'Places-LT')
-        txt = './LT_txt/Places_LT'
-
-        self.dataset_train = self.dataset(root=root, txt=os.path.join(txt, 'Places_LT_train.txt'), transform=self.train_transform)
-        self.dataset_val = self.dataset(root=root, txt=os.path.join(txt, 'Places_LT_val.txt'), transform=self.val_transform)
-        self.dataset_test = self.dataset(root=root, txt=os.path.join(txt, 'Places_LT_test.txt'), transform=self.val_transform)
-
-    def test_dataloader(self):
-        return DataLoader(self.dataset_test, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-    @property
-    def num_classes(self) -> int:
-        return 365
-
-class CarsDataModule(AbstractDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(train_split='train', val_split='test', *args, **kwargs)
-        self.dataset = torchvision.datasets.StanfordCars
-        self.max_num_samples = 24  # max is 40~50
-
-    @property
-    def num_classes(self) -> int:
-        return 196
 
 """
 ImageNet100 Dataset
@@ -530,6 +303,7 @@ class TextToken_Dataset(Dataset):
 
         return sample, label
 
+
 class ImageNet100DataModule(AbstractDataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -697,43 +471,6 @@ class ImageNet100DataModule(AbstractDataModule):
         return self.dataset_query['trn'].num_classes
 
 
-class ImageNet1000DataModule(ImageNet100DataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = ImageNet100_Dataset
-
-        self.max_query_num_samples = 700
-        self.dataset_root = 'imagenet-mini'
-        self.memory_split = 700
-        self.total_samples = 1000
-
-
-class ImageNet30samplesDataModule(ImageNet100DataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = ImageNet100_Dataset
-
-        self.max_query_num_samples = 100
-        self.dataset_root = 'ILSVRC_30samples'
-        self.len_shot = 30
-        self.train_subdirs = ['train']
-        self.val_subdirs = ['val']
-        self.test_subdirs = ['val']
-
-
-class ImageNet40samplesDataModule(ImageNet100DataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = ImageNet100_Dataset
-
-        self.max_query_num_samples = 10
-        self.dataset_root = 'ILSVRC_40samples'
-        self.len_shot = 30
-        self.train_subdirs = ['train']
-        self.val_subdirs = ['val']
-        self.test_subdirs = ['val']
-
-
 class MiniImagenetDataModule(ImageNet100DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -745,50 +482,6 @@ class MiniImagenetDataModule(ImageNet100DataModule):
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
-
-
-class ImageNet130samplesDataModule(ImageNet100DataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = ImageNet100_Dataset
-
-        self.max_query_num_samples = 100
-        self.dataset_root = 'ILSVRC_130samples'
-        # self.memory_split = 100
-        self.len_shot = 30
-        # self.total_samples = 130  # to make it length-agnostic
-        self.train_subdirs = ['train']
-        self.val_subdirs = ['val']
-        self.test_subdirs = ['val']
-
-
-class ImageNet500samplesDataModule(ImageNet100DataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = ImageNet100_Dataset
-
-        self.max_query_num_samples = 300
-        self.dataset_root = 'ILSVRC_500samples'
-        # self.memory_split = 400
-        self.len_shot = 200
-        # self.total_samples = 500  # to make it length-agnostic
-        self.train_subdirs = ['train']
-        self.val_subdirs = ['val']
-        self.test_subdirs = ['val']
-
-
-class ImageNetFullsamplesDataModule(ImageNet100DataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dataset = ImageNet100_Dataset
-
-        self.max_query_num_samples = 1100
-        self.dataset_root = 'ILSVRC_1300samples'
-        self.len_shot = 200
-        # self.total_samples = 1300  # to make it length-agnostic
-        self.train_subdirs = ['train']
-        self.val_subdirs = ['val']
-        self.test_subdirs = ['val']
 
 
 class ImageNetUnseen16shotDataModule(ImageNet100DataModule):
@@ -875,96 +568,11 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset_root = 'CUB_200_2011'
-        self.len_shot = 5 # each classes in dataset have 29~30 images each
+        self.len_shot = None
 
         self.train_subdirs = ['Train']
         self.val_subdirs = ['Val']
         self.test_subdirs = ['Val']
-
-
-class ImageNet1Kclasses160samples(ImageNet100DataModule):
-    ''' seen classes '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.dataset = ImageNet100_Dataset
-
-        self.max_classes = None
-        self.max_query_num_samples = 130  # 16
-        self.dataset_root = 'ILSVRC_1Kclasses160samples'
-        self.len_shot = 30 # shot # 16
-        self.train_subdirs = ['train']
-        self.val_subdirs = ['val']
-        self.test_subdirs = ['val']
-
-    def setup(self, stage: str):
-        assert False, "replace dataset_train with dataset_query['trn']"
-        root = os.path.join(self.hparams.datadir, self.dataset_root)
-        label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
-
-        self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_query_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
-        self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_shot=0)
-        self.dataset_test = self.dataset_val
-
-        self.dataset_train_shot = self.dataset_train  # becomes equivalent to dataset_train
-        self.dataset_val_shot = self.dataset_train
-        self.dataset_test_shot = self.dataset_train
-
-        self.dataset_train_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file=os.path.join(root, 'standard_label.json'),
-                                                      transform=self.train_transform,
-                                                      len_memory=1000)
-        self.dataset_val_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file=os.path.join(root, 'standard_label.json'),
-                                                      transform=self.val_transform,
-                                                      len_memory=1000)
-        self.dataset_test_memory = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
-                                                      label_file=os.path.join(root, 'standard_label.json'),
-                                                      transform=self.val_transform,
-                                                      len_memory=1000)
-
-        self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
-        self.dataset_val_text = self.dataset_train_text
-        self.dataset_test_text = self.dataset_train_text
-
-
-class ImageNet100classes160samples(ImageNet100DataModule):
-    ''' seen classes '''
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.dataset = ImageNet100_Dataset
-
-        self.max_classes = None
-        self.max_query_num_samples = 100
-        self.dataset_root = 'ILSVRC_100classes160samples'
-        self.len_shot = 30
-        self.train_subdirs = ['train']
-        self.val_subdirs = ['val']
-        self.test_subdirs = ['val']
-
-    def setup(self, stage: str):
-        root = os.path.join(self.hparams.datadir, self.dataset_root)
-        label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
-
-        self.dataset_train = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=self.max_query_num_samples, transform=self.train_transform, is_memory=False, len_shot=self.len_shot)
-        self.dataset_val = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=30, transform=self.val_transform, is_memory=False, len_shot=0)
-        self.dataset_test = self.dataset_val
-
-        self.dataset_train_memory = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=True, len_shot=self.len_shot)
-        self.dataset_val_memory = self.dataset_train_memory
-        self.dataset_test_memory = self.dataset_train_memory
-
-        self.dataset_train_text = TextToken_Dataset(self.dataset_train.text_tokens, self.dataset_train.num_sents)
-        self.dataset_val_text = self.dataset_train_text
-        self.dataset_test_text = self.dataset_train_text
 
 
 class Webvision_dataset(Dataset):

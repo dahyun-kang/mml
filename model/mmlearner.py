@@ -29,7 +29,6 @@ class MemoryModularLearner(nn.Module):
 
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
 
-        # self.attn = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.attn_txt = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.attn_img = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.loss_fn = nn.CrossEntropyLoss()
@@ -332,55 +331,6 @@ class MemoryModularLearner(nn.Module):
             sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_)
 
         return sim_clip
-
-    def forward_p15_1_crossmodal_self_imgknn_textknn_probfusion_nokvinput(self, x, y, stage):
-        def retrieve_knn(x, mem, k):
-            with torch.no_grad():
-                classwise_sim = torch.einsum('b d, n d -> b n', x, mem)
-                _, indices = classwise_sim.topk(k=k, dim=-1, largest=True, sorted=True)
-
-                # N, D [[B, K] -> B, K, D
-                knnemb = mem[indices]
-                return knnemb
-
-        with torch.no_grad():
-            clipfeat = self.backbone(x)
-
-        # p15.1
-        kv_txt = retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.k)
-        kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.k)
-
-        out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1)
-        out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1)
-
-        # p15.2 self attn
-        # out_txt = self.attn_txt(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
-        # out_img = self.attn_img(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
-
-        out_txt_ = F.normalize(out_txt, dim=-1, p=2)
-        out_img_ = F.normalize(out_img, dim=-1, p=2)
-        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
-        proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
-        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
-
-        sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 32 # * self.temp1
-        sim_txt = torch.einsum('c d, b d -> b c', proto_img_, out_txt_) * self.args.multemp # * self.temp2
-        sim_img = torch.einsum('c d, b d -> b c', proto_txt_, out_img_) * self.args.multemp # * self.temp3
-
-        # p2: logit fusion
-        # sim = 0.5 * (sim_clip + sim_text) * self.args.multemp
-
-        # p3: prob fusion
-        # Be AWARE of using either
-        #     1) F.cross_entropy(unnormalized_tensor)
-        #     2) F.nll_loss(torch.log(F.softmax(unnormalized_tensor)))
-        sim_avg = (F.softmax(sim_clip, dim=-1) + F.softmax(sim_txt, dim=-1) + F.softmax(sim_img, dim=-1)) / 3.
-        # sim_avg = (F.softmax(sim_clip, dim=-1) + F.softmax(sim_txt, dim=-1)) / 2.
-
-        sim = torch.log(sim_avg + 1e-6)
-        self.loss_fn = nn.NLLLoss()  # only comes with log_softmax
-
-        return sim
 
     # def forward_0804_p20_trainqry_mem_1nnexclude_l2search_crossmodal_noclipbase_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
     # def forward_0909_p21_addclipfeat_txtembedl2simlargest16shotproto(self, x, y, stage):
