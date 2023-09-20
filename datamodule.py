@@ -324,8 +324,8 @@ class ImageNet100DataModule(AbstractDataModule):
         wiki_dir = 'wiki'
 
         self.dataset_query = {}
-        self.dataset_memory = {}
-        self.dataset_text = {}
+        self.dataset_imgmem = {}
+        self.dataset_txtmem = {}
         self.dataset_shot = {}
 
         self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
@@ -356,59 +356,34 @@ class ImageNet100DataModule(AbstractDataModule):
         assert len(set(self.dataset_query['tst'].img_path).intersection(set(self.dataset_shot['tst'].img_path))) == 0
 
         # Remove the code duplicates
-        self.dataset_memory['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+        self.dataset_imgmem['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'trn_label.json'),
                                                       transform=self.train_transform,
                                                       len_memory=1000)
-        self.dataset_memory['val'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+        self.dataset_imgmem['val'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'val_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
-        self.dataset_memory['tst'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+        self.dataset_imgmem['tst'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'tst_label.json'),
                                                       transform=self.val_transform,
                                                       len_memory=1000)
 
-        self.dataset_text['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
-        self.dataset_text['val'] = TextToken_Dataset(self.dataset_query['val'].text_tokens, self.dataset_query['val'].num_sents)
-        self.dataset_text['tst'] = TextToken_Dataset(self.dataset_query['tst'].text_tokens, self.dataset_query['tst'].num_sents)
+        self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
+        self.dataset_txtmem['val'] = TextToken_Dataset(self.dataset_query['val'].text_tokens, self.dataset_query['val'].num_sents)
+        self.dataset_txtmem['tst'] = TextToken_Dataset(self.dataset_query['tst'].text_tokens, self.dataset_query['tst'].num_sents)
 
     def test_dataloader(self):
         return DataLoader(self.dataset_query['tst'], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
-    def text_dataloader(self, split):
-        return DataLoader(self.dataset_text[split], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
+    def txtmem_dataloader(self, split):
+        return DataLoader(self.dataset_txtmem[split], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     def shot_dataloader(self, split):
         return DataLoader(self.dataset_shot[split], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
-    def memory_dataloader(self, split):
-        return DataLoader(self.dataset_memory[split], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-    '''
-    def train_text_dataloader(self):
-        return DataLoader(self.dataset_train_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-    def val_text_dataloader(self):
-        return DataLoader(self.dataset_val_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-    def test_text_dataloader(self):
-        return DataLoader(self.dataset_test_text, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-    def train_shot_dataloader(self):
-        return DataLoader(self.dataset_train_shot, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-    def val_shot_dataloader(self):
-        return DataLoader(self.dataset_val_shot, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-    def test_shot_dataloader(self):
-        return DataLoader(self.dataset_test_shot, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-
-    def train_memory_dataloader(self):
-        return DataLoader(self.dataset_train_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-    def val_memory_dataloader(self):
-        return DataLoader(self.dataset_val_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-    def test_memory_dataloader(self):
-        return DataLoader(self.dataset_test_memory, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
-    '''
+    def imgmem_dataloader(self, split):
+        return DataLoader(self.dataset_imgmem[split], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers)
 
     def setup_episodic_eval(self, nclass=5, nshot=5, nquery=15):
         root = os.path.join(self.hparams.datadir, self.dataset_root)
@@ -458,13 +433,13 @@ class ImageNet100DataModule(AbstractDataModule):
 
         self.dataset_query = {}
         self.dataset_shot = {}
-        self.dataset_memory = {}
-        self.dataset_text = {}
+        self.dataset_imgmem = {}
+        self.dataset_txtmem = {}
 
         self.dataset_query['tst'] = SubsetDataset(data=query_img_path, targets=query_targets, transform=self.val_transform)
         self.dataset_shot['tst'] = SubsetDataset(data=shot_img_path, targets=shot_targets, transform=self.val_transform)
-        self.dataset_memory['tst'] = SubsetDataset(data=mem_img_path, targets=mem_targets, transform=self.val_transform)
-        self.dataset_text['tst'] = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
+        self.dataset_imgmem['tst'] = SubsetDataset(data=mem_img_path, targets=mem_targets, transform=self.val_transform)
+        self.dataset_txtmem['tst'] = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
 
     @property
     def num_classes(self) -> int:
@@ -524,8 +499,8 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         wiki_dir = 'wiki'
 
         self.dataset_query = {}
-        self.dataset_memory = {}
-        self.dataset_text = {}
+        self.dataset_imgmem = {}
+        self.dataset_txtmem = {}
         self.dataset_shot = {}
 
         self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
@@ -539,16 +514,16 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         self.dataset_shot['val'] = self.dataset_shot['trn']
         self.dataset_shot['tst'] = self.dataset_shot['trn']
 
-        self.dataset_memory['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
+        self.dataset_imgmem['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'standard_label.json'),
                                                       transform=self.train_transform,
                                                       len_memory=1000)
-        self.dataset_memory['val'] = self.dataset_memory['trn']
-        self.dataset_memory['tst'] = self.dataset_memory['trn']
+        self.dataset_imgmem['val'] = self.dataset_imgmem['trn']
+        self.dataset_imgmem['tst'] = self.dataset_imgmem['trn']
 
-        self.dataset_text['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
-        self.dataset_text['val'] = self.dataset_text['trn']
-        self.dataset_text['tst'] = self.dataset_text['trn']
+        self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
+        self.dataset_txtmem['val'] = self.dataset_txtmem['trn']
+        self.dataset_txtmem['tst'] = self.dataset_txtmem['trn']
 
 
 class ImageNetSeen16shotDataModule(ImageNet100DataModule_Standard):
@@ -568,6 +543,7 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset_root = 'CUB_200_2011'
+        self.max_query_num_samples = None  # val/test queries
         self.len_shot = None
 
         self.train_subdirs = ['Train']

@@ -108,8 +108,8 @@ class MemoryModularLearner(nn.Module):
 
         # load or save memory
         for split in splits:
-            img_loader = self.dm.memory_dataloader(split)  # TODO: rename the loader with imgmem
-            txt_loader = self.dm.text_dataloader(split)  # TODO: rename the loader with txtmem
+            img_loader = self.dm.imgmem_dataloader(split)
+            txt_loader = self.dm.txtmem_dataloader(split)
 
             img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
             img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
