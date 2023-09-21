@@ -13,6 +13,7 @@ from pytorch_lightning import seed_everything
 from sampler.ClassAwareSampler import ClassAwareSampler
 from sampler.WeightedSampler import WeightedDistributedSampler
 from text_data.preprocess import SentPreProcessor
+from text_data.prompt_template import imagenet_classes
 
 
 class Transforms:
@@ -204,7 +205,7 @@ class ImageNet100_Dataset(Dataset):
                     # imgdirs = imgdirs[200:]  # full
                 else:
                     num_samples_i = min(max_samples, len(imgdirs) - self.len_shot) if max_samples else len(imgdirs) - self.len_shot
-                    # num_samples_i = max_samples if max_samples else len(imgdirs) - self.len_shot  # 428
+                    # num_samples_i = max_samples if max_samples else len(imgdirs) - self.len_shot  # full
                     imgdirs = imgdirs[:num_samples_i]
 
                 for imgdir in imgdirs:
@@ -616,31 +617,59 @@ class Webvision_dataset(Dataset):
         return len(self.targets)
 
 
+class ImageNet1Kval(Dataset):
+    def __init__(self, transform):
+        super().__init__()
+        self.transform = transform
+        root = '/home/dahyun/datasets/ILSVRC/Data/CLS-LOC/val/'
+        self.img_path = os.listdir(root)
+        self.img_path = [os.path.join(root, img) for img in self.img_path]
+        self.img_path.sort()
+        with open('/home/dahyun/datasets/ILSVRC/Annotations/CLS-LOC/val/imagenet_2012_validation_synset_labels.txt', 'r') as f:
+            synsets = list(f.read().splitlines())
+        with open('/home/dahyun/datasets/ILSVRC_seen16shots/standard_label.json', 'r') as f:
+            idx_classes = json.load(f)
+        self.targets = [idx_classes[t] for t in synsets]
+        self.txtlabels = imagenet_classes
+
+    def __len__(self):
+        return len(self.targets)
+
+    def __getitem__(self, index):
+        path = self.img_path[index]
+        label = self.targets[index]
+
+        with open(path, 'rb') as f:
+            sample = Image.open(f).convert('RGB')
+
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample, label
+
+
+class ImageNet1KvalDataModule(LightningDataModule):
+    def __init__(self, imgsize=224, batchsize=256, num_workers=0):
+        super().__init__()
+        self.save_hyperparameters()
+        transform = Transforms.clip_transform(imgsize)
+        self.val_dataset = ImageNet1Kval(transform=transform)
+
+    def test_dataloader(self):
+        val_loader = DataLoader(self.val_dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
+        return val_loader
+
+    @property
+    def txtlabels(self):
+        return self.val_dataset.txtlabels
+
+
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
-    dataset_dict = {'cifar10': CIFAR10DataModule,
-                    'cifar100': CIFAR100DataModule,
-                    'food101': Food101DataModule,
-                    'places365': Places365DataModule,
-                    'fgvcaircraft': FGVCAircraftDataModule,
-                    'cars': CarsDataModule,
-                    'stl10': STL10DataModule,
-                    'imagenetLT': ImageNet_LT_DataModule,
-                    'placesLT': Places_LT_DataModule,
-                    'imagenet100' : ImageNet100DataModule,
-                    'imagenetmini' : ImageNet1000DataModule,
-                    'imagenet100standard' : ImageNet100DataModule_Standard,  # seen
-                    'imagenet1Kclasses160samples' : ImageNet1Kclasses160samples,  # seen
-                    'imagenet100classes160samples' : ImageNet100classes160samples,  # seen
-                    'miniimagenet' : MiniImagenetDataModule,
-                    'imagenet30samples' : ImageNet30samplesDataModule,
-                    'imagenet40samples' : ImageNet40samplesDataModule,
-                    'imagenet130samples' : ImageNet130samplesDataModule,
-                    'imagenet500samples' : ImageNet500samplesDataModule,
-                    'imagenetfullsamples' : ImageNetFullsamplesDataModule,
-                    'cub2011standard' : Cub2011DataModule_Standard,
+    dataset_dict = {'cub2011standard' : Cub2011DataModule_Standard,
                     'imagenetseen16shots' : ImageNetSeen16shotDataModule,
                     'imagenetunseen16shots' : ImageNetUnseen16shotDataModule,
                     'imagenetunseenfullshots' : ImageNetUnseenfullshotDataModule,
+                    'imagenet1Kval' : ImageNet1KvalDataModule,
                     }
 
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None

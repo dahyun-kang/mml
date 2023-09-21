@@ -169,6 +169,7 @@ class MemoryModularLearner(nn.Module):
             txtlabels = []
             for target in range(len(img_label.unique())):
                 txtlabel = img_loader.dataset.txtlabels[target] # .split(', ')[0]
+                # txtlabel = self.dm.txtlabels[target]
                 txtlabels.append(txtlabel)
 
             self.cls_label[split] = np.array(txtlabels)
@@ -176,7 +177,7 @@ class MemoryModularLearner(nn.Module):
             if self.args.runfree == 'clipzeroshot':
                 txtlabelembed = []
                 for txtlabel in self.cls_label[split]:
-                    txtlabel = [template.format(t) for template in prompt_templates]
+                    txtlabel = [template.format(txtlabel) for template in prompt_templates]
                     txtlabeltokens = clip.tokenize(txtlabel).cuda()
                     with torch.inference_mode():
                         txtlabelproto = self.backbone.encode_text(txtlabeltokens)
@@ -184,6 +185,7 @@ class MemoryModularLearner(nn.Module):
                         txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
                     txtlabelembed.append(txtlabelproto)
                 self.cls_prmpt[split] = torch.stack(txtlabelembed, dim=0)
+
 
             '''
             # generate few-shot prototype
@@ -303,7 +305,7 @@ class MemoryModularLearner(nn.Module):
         memory_ = F.normalize(memory, dim=-1, p=2)
 
         globalsim = torch.einsum('b d, n d -> b n', out_, memory_)
-        _, indices = globalsim.topk(k=self.args.k, dim=-1, largest=True, sorted=True)
+        _, indices = globalsim.topk(k=self.args.ik, dim=-1, largest=True, sorted=True)
         globalcls = labels[indices]
 
         def majority_vote(input):
