@@ -551,6 +551,101 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
         self.val_subdirs = ['Val']
         self.test_subdirs = ['Val']
 
+    def setup(self, stage: str):
+        root = os.path.join(self.hparams.datadir, self.dataset_root)
+        label_mapping_file = 'labels.txt'
+        wiki_dir = 'wiki'
+
+        self.dataset_query = {}
+        self.dataset_imgmem = {}
+        self.dataset_txtmem = {}
+        self.dataset_shot = {}
+
+        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
+        self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=0)
+        self.dataset_query['tst'] = self.dataset_query['val']
+
+        self.dataset_shot['trn'] = None
+        self.dataset_shot['val'] = None
+        self.dataset_shot['tst'] = None
+
+        self.dataset_imgmem['trn'] = CUB_memory_dataset(root=root, memory_dir='memory', label_mapping_file=label_mapping_file, transform=self.train_transform)
+        self.dataset_imgmem['val'] = self.dataset_imgmem['trn']
+        self.dataset_imgmem['tst'] = self.dataset_imgmem['trn']
+
+        self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
+        self.dataset_txtmem['val'] = self.dataset_txtmem['trn']
+        self.dataset_txtmem['tst'] = self.dataset_txtmem['trn']
+
+class CUB_memory_dataset(Dataset):
+    def __init__(self, root, memory_dir='memory', label_mapping_file='labels.txt', transform=None):
+        self.transform = transform
+
+        self.memory_dir = os.path.join(root, memory_dir)
+        self.dir2target = self.folder_dir_mapper(os.path.join(root, label_mapping_file))
+
+        folder_dirs = os.listdir(os.path.join(root, memory_dir))
+        self.memory = self.get_all_files(folder_dirs)
+    
+        self.txtlabels = self.txtlabels_builder(root, label_mapping_file)
+
+    def txtlabels_builder(self, root, label_mapping_file):
+        txtlabels = []
+
+        with open(os.path.join(root, label_mapping_file), 'r') as f:
+            for line in f:
+                line = line.rstrip('\n').split()
+                _, target, key = line
+
+                key = ' '.join(key.split('_'))
+
+                txtlabels.append([int(target), key])
+
+        ordered_txtlabels = ['' for _ in range(len(txtlabels))]
+        for target, key in txtlabels:
+            ordered_txtlabels[target] = key
+
+        return ordered_txtlabels
+
+    def folder_dir_mapper(self, label_mapping_file):
+        mapper = {}
+
+        with open(label_mapping_file, 'r') as f:
+            for line in f:
+                line = line.rstrip('\n').split()
+                key1, target, key2 = line
+                target = int(target)
+
+                mapper[key1] = target
+                mapper[key2] = target
+        return mapper
+    
+    def get_all_files(self, folder_dirs):
+        all_files = []
+
+        for folder in folder_dirs:
+            folder_dir = os.path.join(self.memory_dir, folder)
+            folder_files = os.listdir(folder_dir)
+            target = self.dir2target['_'.join(folder.split())]
+
+            for file in folder_files:
+                if file.split('.')[-1] != 'jpg':
+                    continue
+                all_files.append([os.path.join(folder_dir, file), target])
+
+        return all_files
+    
+    def __len__(self):
+        return len(self.memory)
+
+    def __getitem__(self, index):
+        img_path, target = self.memory[index]
+        img = Image.open(img_path).convert('RGB')
+        if not (self.transform == None):
+            img = self.transform(img)
+        return img, target
 
 class Webvision_dataset(Dataset):
     def __init__(self, root='webvision', label_file = '', max_classes = None, transform=None, len_memory=1000, webvisionsource='google'):

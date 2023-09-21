@@ -21,7 +21,7 @@ class CustomCheckpoint(ModelCheckpoint):
                                                verbose=True,
                                                save_last=True)
         # For evaluation, load best_model-v(k).cpkt where k is the max index
-        if args.eval or args.episodiceval and not args.runfree:
+        if (args.eval or args.episodiceval) and not args.runfree:
             self.modelpath = self.return_best_model_path(self.dirpath, self.filename)
             print('evaluating', self.modelpath)
         # For training, set the filename as best_model.ckpt
