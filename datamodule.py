@@ -374,6 +374,9 @@ class ImageNet100DataModule(AbstractDataModule):
                                                       synset2txtlabel=synset2txtlabel,
                                                       transform=self.val_transform,
                                                       len_memory=1000)
+        # self.dataset_imgmem['trn'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.train_transform, label_file=f'{self.dataset_root}/trn_label.json', synset2txtlabel=synset2txtlabel)
+        # self.dataset_imgmem['val'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.val_transform, label_file=f'{self.dataset_root}/val_label.json', synset2txtlabel=synset2txtlabel)
+        # self.dataset_imgmem['tst'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.val_transform, label_file=f'{self.dataset_root}/tst_label.json', synset2txtlabel=synset2txtlabel)
 
         self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
         self.dataset_txtmem['val'] = TextToken_Dataset(self.dataset_query['val'].text_tokens, self.dataset_query['val'].num_sents)
@@ -522,13 +525,15 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
 
         self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
-        self.dataset_query['val'] = ImageNet1K(split='val', datadir=self.hparams.datadir, transform=self.val_transform)
+        self.dataset_query['val'] = ImageNet1K(split='val', datadir=self.hparams.datadir, transform=self.val_transform, label_file = f'{self.dataset_root}/standard_label.json', synset2txtlabel=synset2txtlabel)
         self.dataset_query['tst'] = self.dataset_query['val']
 
         self.dataset_shot['trn'] = self.dataset_query['trn']  # equivalent to dataset_train and shared with all splits
         self.dataset_shot['val'] = self.dataset_shot['trn']
         self.dataset_shot['tst'] = self.dataset_shot['trn']
 
+
+        # self.dataset_imgmem['trn'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.val_transform, label_file = f'{self.dataset_root}/standard_label.json', synset2txtlabel=synset2txtlabel)
         self.dataset_imgmem['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'standard_label.json'),
                                                       synset2txtlabel=synset2txtlabel,
@@ -633,12 +638,14 @@ class Webvision_dataset(Dataset):
 
 
 class ImageNet1K(Dataset):
-    def __init__(self, datadir, transform, split='train', **kwargs):
+    def __init__(self, datadir, transform, label_file, synset2txtlabel, split='train', **kwargs):
         super().__init__()
         self.datadir = datadir
+        self.label_file = label_file
         self.img_datadir = os.path.join(datadir, 'ILSVRC/Data/CLS-LOC', split)
-        self.label_file = 'ILSVRC_seen16shots/standard_label.json'
         self.transform = transform
+        self.synset2txtlabel = synset2txtlabel
+        self.txtlabels = {}
 
         with open(os.path.join(self.datadir, self.label_file), 'r') as f:
             self.synset2target = json.load(f)
@@ -656,7 +663,10 @@ class ImageNet1K(Dataset):
         self.targets = []
 
         for synset in synsets:
+            if synset not in self.synset2target.keys():
+                continue
             target = self.synset2target[synset]
+            self.txtlabels[target] = self.synset2txtlabel[synset]
 
             synset_dir = os.path.join(self.img_datadir, synset)
             imgpath_c = sorted(os.listdir(synset_dir))
@@ -672,6 +682,9 @@ class ImageNet1K(Dataset):
         with open(os.path.join(self.datadir, 'ILSVRC/Annotations/CLS-LOC/val/imagenet_2012_validation_synset_labels.txt'), 'r') as f:
             synsets = list(f.read().splitlines())
         self.targets = [self.synset2target[t] for t in synsets]
+        for synset in synsets:
+            target = self.synset2target[synset]
+            self.txtlabels[target] = self.synset2txtlabel[synset]
 
     def __len__(self):
         return len(self.targets)
@@ -695,18 +708,16 @@ class ImageNet1KDataModule(LightningDataModule):
         self.save_hyperparameters()
         self.transform = Transforms.clip_transform(imgsize)
 
-    def setup(self, stage: str):
-        self.train_dataset = ImageNet1K(datadir=self.hparams.datadir, split='train', transform=self.transform)
-        self.val_dataset = ImageNet1K(datadir=self.hparams.datadir, split='val', transform=self.transform)
-
     def imgmem_dataloader(self, split):
         assert split == 'tst'
-        loader = DataLoader(self.train_dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
+        dataset = ImageNet1K(datadir=self.hparams.datadir, split='train', transform=self.transform)
+        loader = DataLoader(dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
         return loader
 
     def test_dataloader(self):
-        val_loader = DataLoader(self.val_dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
-        return val_loader
+        dataset = ImageNet1K(datadir=self.hparams.datadir, split='val', transform=self.transform)
+        loader = DataLoader(dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
+        return loader
 
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
