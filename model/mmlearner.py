@@ -25,8 +25,7 @@ class MemoryModularLearner(nn.Module):
         self.dm = dm
         self.backbone = self._init_backbone()
         self.dim = 768 if self.args.backbone == 'clipvitl' else 512
-        cachedatasetdir = args.dataset if 'seed' not in args.dataset else args.dataset.split('_seed')[0]
-        self.cachedir = osp.join(os.getcwd(), 'cache', cachedatasetdir, args.backbone)
+        self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
 
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
 
