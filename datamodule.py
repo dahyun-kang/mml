@@ -42,7 +42,7 @@ class Transforms:
 
 
 class AbstractDataModule(LightningDataModule):
-    def __init__(self, datadir='data', imgsize=224, batchsize=256, num_workers=0, transform_type=None, train_split=None, val_split=None, sampler=None):
+    def __init__(self, datadir='data', dataset='', imgsize=224, batchsize=256, num_workers=0, transform_type=None, train_split=None, val_split=None, sampler=None):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = None
@@ -476,14 +476,13 @@ class MiniImagenetDataModule(ImageNet100DataModule):
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
 
-
 class ImageNetUnseen16shotDataModule(ImageNet100DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
         self.max_query_num_samples = 200  # val/test queries
-        self.dataset_root = 'ILSVRC_unseen16shots'
+        self.dataset_root = kwargs['dataset']
         self.len_shot = 16
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
@@ -553,7 +552,8 @@ class ImageNetSeen16shotDataModule(ImageNet100DataModule_Standard):
         self.dataset = ImageNet100_Dataset
 
         self.max_query_num_samples = 200  # val/test queries
-        self.dataset_root = 'ILSVRC_seen16shots'
+        self.dataset_root = kwargs['dataset']
+        print(self.dataset_root)
         self.len_shot = 16
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
@@ -608,7 +608,7 @@ class CUB_memory_dataset(Dataset):
 
         folder_dirs = os.listdir(os.path.join(root, memory_dir))
         self.memory = self.get_all_files(folder_dirs)
-    
+
         self.txtlabels = self.txtlabels_builder(root, label_mapping_file)
 
     def txtlabels_builder(self, root, label_mapping_file):
@@ -641,7 +641,7 @@ class CUB_memory_dataset(Dataset):
                 mapper[key1] = target
                 mapper[key2] = target
         return mapper
-    
+
     def get_all_files(self, folder_dirs):
         all_files = []
 
@@ -656,7 +656,7 @@ class CUB_memory_dataset(Dataset):
                 all_files.append([os.path.join(folder_dir, file), target])
 
         return all_files
-    
+
     def __len__(self):
         return len(self.memory)
 
@@ -816,16 +816,17 @@ class ImageNet1KDataModule(LightningDataModule):
 
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
+    datasetkey = dataset if 'seed' not in dataset else dataset.split('_seed')[0]
     dataset_dict = {'cub2011standard' : Cub2011DataModule_Standard,
                     'imagenetseen16shots' : ImageNetSeen16shotDataModule,
                     'imagenetunseen16shots' : ImageNetUnseen16shotDataModule,
                     'imagenetunseenfullshots' : ImageNetUnseenfullshotDataModule,
                     'imagenet1K' : ImageNet1KDataModule,
                     }
-
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
-    datamodule = dataset_dict[dataset](
+    datamodule = dataset_dict[datasetkey](
         datadir=datapath,
+        dataset=dataset,
         imgsize=224,
         batchsize=batchsize,
         num_workers=8,
