@@ -24,7 +24,7 @@ class MemoryModularLearner(nn.Module):
         self.args = args
         self.dm = dm
         self.backbone = self._init_backbone()
-        self.dim = 512
+        self.dim = 768 if self.args.backbone == 'clipvitl' else 512
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
 
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
@@ -61,6 +61,9 @@ class MemoryModularLearner(nn.Module):
             '''
         elif self.args.backbone == 'clipvitb':
             model, preprocess = clip.load("ViT-B/32")
+            model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
+        elif self.args.backbone == 'clipvitl':
+            model, preprocess = clip.load("ViT-L/14")
             model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
         elif self.args.backbone == 'clipRN50':
             model, preprocess = clip.load("RN50")
