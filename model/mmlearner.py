@@ -24,7 +24,7 @@ class MemoryModularLearner(nn.Module):
         self.args = args
         self.dm = dm
         self.backbone = self._init_backbone()
-        self.dim = 512
+        self.dim = 768 if self.args.backbone == 'clipvitl' else 512
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
 
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
@@ -61,6 +61,9 @@ class MemoryModularLearner(nn.Module):
             '''
         elif self.args.backbone == 'clipvitb':
             model, preprocess = clip.load("ViT-B/32")
+            model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
+        elif self.args.backbone == 'clipvitl':
+            model, preprocess = clip.load("ViT-L/14")
             model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
         elif self.args.backbone == 'clipRN50':
             model, preprocess = clip.load("RN50")
@@ -122,10 +125,10 @@ class MemoryModularLearner(nn.Module):
                 txt_embed = torch.load(txt_embed_path) ; txt_label = torch.load(txt_label_path)
             else:
                 print(f'\n *** [{split}] embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n')
-                if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
                 torch.multiprocessing.set_sharing_strategy('file_system')
                 img_embed, img_label = self._init_memory(img_loader, split, modality='img')
                 txt_embed, txt_label = self._init_memory(txt_loader, split, modality='txt')
+                if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
                 torch.save(img_embed, img_embed_path) ; torch.save(img_label, img_label_path)
                 torch.save(txt_embed, txt_embed_path) ; torch.save(txt_label, txt_label_path)
 

@@ -43,7 +43,7 @@ class Transforms:
 
 
 class AbstractDataModule(LightningDataModule):
-    def __init__(self, datadir='data', imgsize=224, batchsize=256, num_workers=0, transform_type=None, train_split=None, val_split=None, sampler=None):
+    def __init__(self, datadir='data', dataset='', imgsize=224, batchsize=256, num_workers=0, transform_type=None, train_split=None, val_split=None, sampler=None):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = None
@@ -325,6 +325,8 @@ class ImageNet100DataModule(AbstractDataModule):
         label_mapping_file = 'labels.txt'
         wiki_dir = 'wiki'
 
+        synset2txtlabel = self.imagenetsynset2txtlabel()
+
         self.dataset_query = {}
         self.dataset_imgmem = {}
         self.dataset_txtmem = {}
@@ -360,16 +362,22 @@ class ImageNet100DataModule(AbstractDataModule):
         # Remove the code duplicates
         self.dataset_imgmem['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'trn_label.json'),
+                                                      synset2txtlabel=synset2txtlabel,
                                                       transform=self.train_transform,
                                                       len_memory=1000)
         self.dataset_imgmem['val'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'val_label.json'),
+                                                      synset2txtlabel=synset2txtlabel,
                                                       transform=self.val_transform,
                                                       len_memory=1000)
         self.dataset_imgmem['tst'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'tst_label.json'),
+                                                      synset2txtlabel=synset2txtlabel,
                                                       transform=self.val_transform,
                                                       len_memory=1000)
+        # self.dataset_imgmem['trn'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.train_transform, label_file=f'{self.dataset_root}/trn_label.json', synset2txtlabel=synset2txtlabel)
+        # self.dataset_imgmem['val'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.val_transform, label_file=f'{self.dataset_root}/val_label.json', synset2txtlabel=synset2txtlabel)
+        # self.dataset_imgmem['tst'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.val_transform, label_file=f'{self.dataset_root}/tst_label.json', synset2txtlabel=synset2txtlabel)
 
         self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
         self.dataset_txtmem['val'] = TextToken_Dataset(self.dataset_query['val'].text_tokens, self.dataset_query['val'].num_sents)
@@ -443,6 +451,15 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset_imgmem['tst'] = SubsetDataset(data=mem_img_path, targets=mem_targets, transform=self.val_transform)
         self.dataset_txtmem['tst'] = TextToken_Dataset(self.dataset_test_all.text_tokens, self.dataset_test_all.num_sents)
 
+    def imagenetsynset2txtlabel(self):
+        synset2txtlabel = {}
+        with open(os.path.join(self.hparams.datadir, self.dataset_root, 'cliplabels.txt'), 'r') as f:
+            lines = list(f.read().splitlines())
+            for line in lines:
+                synset, target, txtlabel = line.split(',')
+                synset2txtlabel[synset] = txtlabel
+        return synset2txtlabel
+
     @property
     def num_classes(self) -> int:
         return self.dataset_query['trn'].num_classes
@@ -460,14 +477,13 @@ class MiniImagenetDataModule(ImageNet100DataModule):
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
 
-
 class ImageNetUnseen16shotDataModule(ImageNet100DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
         self.max_query_num_samples = 200  # val/test queries
-        self.dataset_root = 'ILSVRC_unseen16shots'
+        self.dataset_root = kwargs['dataset']
         self.len_shot = 16
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
@@ -500,6 +516,8 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         label_mapping_file = 'labels.txt'
         wiki_dir = 'wiki'
 
+        synset2txtlabel = self.imagenetsynset2txtlabel()
+
         self.dataset_query = {}
         self.dataset_imgmem = {}
         self.dataset_txtmem = {}
@@ -507,17 +525,18 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
 
         self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
-        self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
-        self.dataset_query['tst'] = self.dataset(root, train=False, sub_dirs=self.test_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+        self.dataset_query['val'] = ImageNet1K(split='val', datadir=self.hparams.datadir, transform=self.val_transform, label_file = f'{self.dataset_root}/standard_label.json', synset2txtlabel=synset2txtlabel)
+        self.dataset_query['tst'] = self.dataset_query['val']
 
         self.dataset_shot['trn'] = self.dataset_query['trn']  # equivalent to dataset_train and shared with all splits
         self.dataset_shot['val'] = self.dataset_shot['trn']
         self.dataset_shot['tst'] = self.dataset_shot['trn']
 
+
+        # self.dataset_imgmem['trn'] = ImageNet1K(split='train', datadir=self.hparams.datadir, transform=self.val_transform, label_file = f'{self.dataset_root}/standard_label.json', synset2txtlabel=synset2txtlabel)
         self.dataset_imgmem['trn'] = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                       label_file=os.path.join(root, 'standard_label.json'),
+                                                      synset2txtlabel=synset2txtlabel,
                                                       transform=self.train_transform,
                                                       len_memory=1000)
         self.dataset_imgmem['val'] = self.dataset_imgmem['trn']
@@ -534,7 +553,8 @@ class ImageNetSeen16shotDataModule(ImageNet100DataModule_Standard):
         self.dataset = ImageNet100_Dataset
 
         self.max_query_num_samples = 200  # val/test queries
-        self.dataset_root = 'ILSVRC_seen16shots'
+        self.dataset_root = kwargs['dataset']
+        print(self.dataset_root)
         self.len_shot = 16
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
@@ -640,7 +660,7 @@ class CUB_memory_dataset(Dataset):
 
         folder_dirs = os.listdir(self.memory_dir)
         self.memory = self.get_all_files(folder_dirs)
-        
+
     def mapper_refiner(self, mapper):
         txtlabels = []
         new_mapper = copy.deepcopy(mapper)
@@ -677,7 +697,7 @@ class CUB_memory_dataset(Dataset):
                 all_files.append([os.path.join(folder_dir, file), target])
 
         return all_files
-    
+
     def __len__(self):
         return len(self.memory)
 
@@ -689,7 +709,7 @@ class CUB_memory_dataset(Dataset):
         return img, target
 
 class Webvision_dataset(Dataset):
-    def __init__(self, root='webvision', label_file = '', max_classes = None, transform=None, len_memory=1000, webvisionsource='google'):
+    def __init__(self, root='webvision', label_file = '', synset2txtlabel={}, transform=None, len_memory=1000, webvisionsource='google'):
         self.transform = transform
 
         # n0xxxxxxx -> 'web' 0 ~ 999
@@ -737,10 +757,10 @@ class Webvision_dataset(Dataset):
 
         for linenum, line in enumerate(lines):
             nxxxxxxxx = line.split()[0]
-            classtxtlabel = line[10:-1]
             if nxxxxxxxx in synset_set:
                 target = idxs_cls[nxxxxxxxx]
-                self.txtlabels[target] = classtxtlabel
+                clstxtlabel = synset2txtlabel[nxxxxxxxx]  # clipstyle txtlabel
+                self.txtlabels[target] = clstxtlabel
 
     def __getitem__(self, index):
         img_path = self.img_path[index]
@@ -753,20 +773,54 @@ class Webvision_dataset(Dataset):
         return len(self.targets)
 
 
-class ImageNet1Kval(Dataset):
-    def __init__(self, transform):
+class ImageNet1K(Dataset):
+    def __init__(self, datadir, transform, label_file, synset2txtlabel, split='train', **kwargs):
         super().__init__()
+        self.datadir = datadir
+        self.label_file = label_file
+        self.img_datadir = os.path.join(datadir, 'ILSVRC/Data/CLS-LOC', split)
         self.transform = transform
-        root = '/home/dahyun/datasets/ILSVRC/Data/CLS-LOC/val/'
-        self.img_path = os.listdir(root)
-        self.img_path = [os.path.join(root, img) for img in self.img_path]
+        self.synset2txtlabel = synset2txtlabel
+        self.txtlabels = {}
+
+        with open(os.path.join(self.datadir, self.label_file), 'r') as f:
+            self.synset2target = json.load(f)
+
+        if split == 'train':
+            self._init_trainsplit()
+        elif split == 'val':
+            self._init_valsplit()
+
+    def _init_trainsplit(self):
+        synsets = os.listdir(self.img_datadir)
+        synsets.sort()
+
+        self.img_path = []
+        self.targets = []
+
+        for synset in synsets:
+            if synset not in self.synset2target.keys():
+                continue
+            target = self.synset2target[synset]
+            self.txtlabels[target] = self.synset2txtlabel[synset]
+
+            synset_dir = os.path.join(self.img_datadir, synset)
+            imgpath_c = sorted(os.listdir(synset_dir))
+            imgpath_c = [os.path.join(synset_dir, img) for img in imgpath_c]
+
+            for imgpath_c_i in imgpath_c:
+                self.img_path.append(imgpath_c_i)
+                self.targets.append(target)
+
+    def _init_valsplit(self):
+        self.img_path = [os.path.join(self.img_datadir, img) for img in os.listdir(self.img_datadir)]
         self.img_path.sort()
-        with open('/home/dahyun/datasets/ILSVRC/Annotations/CLS-LOC/val/imagenet_2012_validation_synset_labels.txt', 'r') as f:
+        with open(os.path.join(self.datadir, 'ILSVRC/Annotations/CLS-LOC/val/imagenet_2012_validation_synset_labels.txt'), 'r') as f:
             synsets = list(f.read().splitlines())
-        with open('/home/dahyun/datasets/ILSVRC_seen16shots/standard_label.json', 'r') as f:
-            idx_classes = json.load(f)
-        self.targets = [idx_classes[t] for t in synsets]
-        self.txtlabels = imagenet_classes
+        self.targets = [self.synset2target[t] for t in synsets]
+        for synset in synsets:
+            target = self.synset2target[synset]
+            self.txtlabels[target] = self.synset2txtlabel[synset]
 
     def __len__(self):
         return len(self.targets)
@@ -784,35 +838,38 @@ class ImageNet1Kval(Dataset):
         return sample, label
 
 
-class ImageNet1KvalDataModule(LightningDataModule):
-    def __init__(self, imgsize=224, batchsize=256, num_workers=0):
+class ImageNet1KDataModule(LightningDataModule):
+    def __init__(self, datadir, imgsize=224, batchsize=256, num_workers=0, **kwargs):
         super().__init__()
         self.save_hyperparameters()
-        transform = Transforms.clip_transform(imgsize)
-        self.val_dataset = ImageNet1Kval(transform=transform)
+        self.transform = Transforms.clip_transform(imgsize)
+
+    def imgmem_dataloader(self, split):
+        assert split == 'tst'
+        dataset = ImageNet1K(datadir=self.hparams.datadir, split='train', transform=self.transform)
+        loader = DataLoader(dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
+        return loader
 
     def test_dataloader(self):
-        val_loader = DataLoader(self.val_dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
-        return val_loader
-
-    @property
-    def txtlabels(self):
-        return self.val_dataset.txtlabels
+        dataset = ImageNet1K(datadir=self.hparams.datadir, split='val', transform=self.transform)
+        loader = DataLoader(dataset, batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False, sampler=None)
+        return loader
 
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
+    datasetkey = dataset if 'seed' not in dataset else dataset.split('_seed')[0]
     dataset_dict = {
                     'cub2011' : Cub2011DataModule,
                     'cub2011standard' : Cub2011DataModule_Standard,
                     'imagenetseen16shots' : ImageNetSeen16shotDataModule,
                     'imagenetunseen16shots' : ImageNetUnseen16shotDataModule,
                     'imagenetunseenfullshots' : ImageNetUnseenfullshotDataModule,
-                    'imagenet1Kval' : ImageNet1KvalDataModule,
+                    'imagenet1K' : ImageNet1KDataModule,
                     }
-
     transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
-    datamodule = dataset_dict[dataset](
+    datamodule = dataset_dict[datasetkey](
         datadir=datapath,
+        dataset=dataset,
         imgsize=224,
         batchsize=batchsize,
         num_workers=8,
