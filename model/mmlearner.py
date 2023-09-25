@@ -141,6 +141,13 @@ class MemoryModularLearner(nn.Module):
             # memory-based prototype generation
             img_proto_list = []
             txt_proto_list = []
+
+            # generate few-shot prototype
+            if self.args.usefewshot:
+                imgshot_loader = self.dm.shot_dataloader(split)
+                torch.multiprocessing.set_sharing_strategy('file_system')
+                img_embed, img_label = self._init_memory(imgshot_loader, split, modality='img')
+
             for c in torch.unique(txt_label):
                 img_embed_c = img_embed[img_label == c]
                 txt_embed_c = txt_embed[txt_label == c]
@@ -161,9 +168,14 @@ class MemoryModularLearner(nn.Module):
                     continue
 
                 # img: row-wise sum
-                img_sim = sim.sum(dim=-1)
-                _, img_indices = img_sim.topk(k=img_k, dim=-1, largest=True, sorted=True)
-                img_proto_list.append(img_embed_c[img_indices].mean(dim=0))
+                if not self.args.usefewshot:
+                    img_sim = sim.sum(dim=-1)
+                    _, img_indices = img_sim.topk(k=img_k, dim=-1, largest=True, sorted=True)
+                    img_proto_list.append(img_embed_c[img_indices].mean(dim=0))
+
+            if self.args.usefewshot:
+                img_label_idx = img_label.unique().sort()[0]
+                img_proto_list = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
 
             self.img_proto[split] = torch.stack(img_proto_list, dim=0)
             self.txt_proto[split] = torch.stack(txt_proto_list, dim=0)
@@ -188,22 +200,6 @@ class MemoryModularLearner(nn.Module):
                         txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
                     txtlabelembed.append(txtlabelproto)
                 self.cls_prmpt[split] = torch.stack(txtlabelembed, dim=0)
-
-
-            '''
-            # generate few-shot prototype
-            for split in splits:
-                imgshot_loader = self.dm.shot_dataloader(split)
-                torch.multiprocessing.set_sharing_strategy('file_system')
-                img_proto_path = osp.join(self.cachedir, f'{split}_img_proto.pth')
-
-                img_embed, img_label = self._init_memory(imgshot_loader, split, modality='img')
-
-                img_label_idx = img_label.unique().sort()[0]
-                img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
-                img_proto = torch.stack(img_proto, dim=0)  # C, D
-                self.img_proto[split] = img_proto
-            '''
 
             print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
 
