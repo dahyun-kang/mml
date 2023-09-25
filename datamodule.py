@@ -8,6 +8,7 @@ from PIL import Image
 
 import os
 import json
+import copy
 
 from pytorch_lightning import seed_everything
 from sampler.ClassAwareSampler import ClassAwareSampler
@@ -559,6 +560,54 @@ class ImageNetSeen16shotDataModule(ImageNet100DataModule_Standard):
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
 
+class Cub2011DataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.max_query_num_samples = 60  # val/test queries # train: 41 ~ 60 images per class, val: 49 ~ 60 images per class
+        self.dataset_root = 'CUB_200_2011'
+        self.len_shot = 5
+        self.train_subdirs = ['Train_class']
+        self.val_subdirs = ['Val_class']
+        self.test_subdirs = ['Val_class']
+
+    def setup(self, stage: str):
+        # if episodiceval: return self.setup_episodic_eval()
+        root = os.path.join(self.hparams.datadir, self.dataset_root)
+        label_mapping_file = 'labels.txt'
+        wiki_dir = 'wiki'
+
+        self.dataset_query = {}
+        self.dataset_imgmem = {}
+        self.dataset_txtmem = {}
+        self.dataset_shot = {}
+
+        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
+
+        self.dataset_query['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+        self.dataset_query['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+        self.dataset_shot['trn'] = self.dataset_query['trn']
+        self.dataset_shot['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
+                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
+        self.dataset_shot['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
+                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
+
+        assert len(set(self.dataset_query['val'].img_path).intersection(set(self.dataset_shot['val'].img_path))) == 0
+        assert len(set(self.dataset_query['tst'].img_path).intersection(set(self.dataset_shot['tst'].img_path))) == 0
+
+        # Remove the code duplicates
+        self.dataset_imgmem['trn'] = CUB_memory_dataset(root=root, memory_dir='memory', label_file='trn_label.json', transform=self.train_transform)
+        self.dataset_imgmem['val'] = CUB_memory_dataset(root=root, memory_dir='memory', label_file='val_label.json', transform=self.train_transform)
+        self.dataset_imgmem['tst'] = CUB_memory_dataset(root=root, memory_dir='memory', label_file='tst_label.json', transform=self.train_transform)
+
+        self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
+        self.dataset_txtmem['val'] = TextToken_Dataset(self.dataset_query['val'].text_tokens, self.dataset_query['val'].num_sents)
+        self.dataset_txtmem['tst'] = TextToken_Dataset(self.dataset_query['tst'].text_tokens, self.dataset_query['tst'].num_sents)
 
 class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
     def __init__(self, *args, **kwargs):
@@ -591,7 +640,7 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
         self.dataset_shot['val'] = None
         self.dataset_shot['tst'] = None
 
-        self.dataset_imgmem['trn'] = CUB_memory_dataset(root=root, memory_dir='memory', label_mapping_file=label_mapping_file, transform=self.train_transform)
+        self.dataset_imgmem['trn'] = CUB_memory_dataset(root=root, memory_dir='memory', label_file='standard_label.json', transform=self.train_transform)
         self.dataset_imgmem['val'] = self.dataset_imgmem['trn']
         self.dataset_imgmem['tst'] = self.dataset_imgmem['trn']
 
@@ -600,55 +649,47 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
         self.dataset_txtmem['tst'] = self.dataset_txtmem['trn']
 
 class CUB_memory_dataset(Dataset):
-    def __init__(self, root, memory_dir='memory', label_mapping_file='labels.txt', transform=None):
+    def __init__(self, root, memory_dir='memory', label_file='labels.txt', transform=None):
         self.transform = transform
+        self.label_file = label_file
 
         self.memory_dir = os.path.join(root, memory_dir)
-        self.dir2target = self.folder_dir_mapper(os.path.join(root, label_mapping_file))
+        with open(os.path.join(root, label_file)) as f:
+            mapper = json.load(f)
+        self.dir2target, self.txtlabels = self.mapper_refiner(mapper)
 
-        folder_dirs = os.listdir(os.path.join(root, memory_dir))
+        folder_dirs = os.listdir(self.memory_dir)
         self.memory = self.get_all_files(folder_dirs)
 
-        self.txtlabels = self.txtlabels_builder(root, label_mapping_file)
-
-    def txtlabels_builder(self, root, label_mapping_file):
+    def mapper_refiner(self, mapper):
         txtlabels = []
+        new_mapper = copy.deepcopy(mapper)
+        
+        for key1 in mapper.keys():
+            # key2 add
+            target = new_mapper[key1]
+            key2 = key1.split('.')[1]
+            new_mapper[key2] = target
 
-        with open(os.path.join(root, label_mapping_file), 'r') as f:
-            for line in f:
-                line = line.rstrip('\n').split()
-                _, target, key = line
-
-                key = ' '.join(key.split('_'))
-
-                txtlabels.append([int(target), key])
-
+            # get txtlabels
+            key = ' '.join(key2.split('_'))
+            txtlabels.append([target, key])
         ordered_txtlabels = ['' for _ in range(len(txtlabels))]
         for target, key in txtlabels:
             ordered_txtlabels[target] = key
 
-        return ordered_txtlabels
-
-    def folder_dir_mapper(self, label_mapping_file):
-        mapper = {}
-
-        with open(label_mapping_file, 'r') as f:
-            for line in f:
-                line = line.rstrip('\n').split()
-                key1, target, key2 = line
-                target = int(target)
-
-                mapper[key1] = target
-                mapper[key2] = target
-        return mapper
+        return new_mapper, txtlabels
 
     def get_all_files(self, folder_dirs):
         all_files = []
 
         for folder in folder_dirs:
+            folder_key = '_'.join(folder.split())
+            if folder_key not in self.dir2target.keys():
+                continue
             folder_dir = os.path.join(self.memory_dir, folder)
             folder_files = os.listdir(folder_dir)
-            target = self.dir2target['_'.join(folder.split())]
+            target = self.dir2target[folder_key]
 
             for file in folder_files:
                 if file.split('.')[-1] != 'jpg':
@@ -817,7 +858,9 @@ class ImageNet1KDataModule(LightningDataModule):
 
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     datasetkey = dataset if 'seed' not in dataset else dataset.split('_seed')[0]
-    dataset_dict = {'cub2011standard' : Cub2011DataModule_Standard,
+    dataset_dict = {
+                    'cub2011' : Cub2011DataModule,
+                    'cub2011standard' : Cub2011DataModule_Standard,
                     'imagenetseen16shots' : ImageNetSeen16shotDataModule,
                     'imagenetunseen16shots' : ImageNetUnseen16shotDataModule,
                     'imagenetunseenfullshots' : ImageNetUnseenfullshotDataModule,
