@@ -560,6 +560,45 @@ class ImageNetSeen16shotDataModule(ImageNet100DataModule_Standard):
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
 
+class Food101DataModule_Standard(ImageNet100DataModule_Standard):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset_root = 'food-101'
+        self.max_query_num_samples = None  # val/test queries
+        self.len_shot = None
+
+        self.train_subdirs = ['Train']
+        self.val_subdirs = ['Val']
+        self.test_subdirs = ['Val']
+
+    def setup(self, stage: str):
+        root = os.path.join(self.hparams.datadir, self.dataset_root)
+        label_mapping_file = 'labels.txt'
+        wiki_dir = 'wiki'
+
+        self.dataset_query = {}
+        self.dataset_imgmem = {}
+        self.dataset_txtmem = {}
+        self.dataset_shot = {}
+
+        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
+        self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
+                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=0)
+        self.dataset_query['tst'] = self.dataset_query['val']
+
+        self.dataset_shot['trn'] = None
+        self.dataset_shot['val'] = None
+        self.dataset_shot['tst'] = None
+
+        self.dataset_imgmem['trn'] = Food_memory_dataset(root=root, memory_dir='memory', label_file='standard_label.json', transform=self.train_transform)
+        self.dataset_imgmem['val'] = self.dataset_imgmem['trn']
+        self.dataset_imgmem['tst'] = self.dataset_imgmem['trn']
+
+        self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
+        self.dataset_txtmem['val'] = self.dataset_txtmem['trn']
+        self.dataset_txtmem['tst'] = self.dataset_txtmem['trn']
+
 class Cub2011DataModule(ImageNet100DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -649,7 +688,7 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
         self.dataset_txtmem['tst'] = self.dataset_txtmem['trn']
 
 class CUB_memory_dataset(Dataset):
-    def __init__(self, root, memory_dir='memory', label_file='labels.txt', transform=None):
+    def __init__(self, root, memory_dir='memory', label_file='standard_label.json', transform=None):
         self.transform = transform
         self.label_file = label_file
 
@@ -708,6 +747,25 @@ class CUB_memory_dataset(Dataset):
             img = self.transform(img)
         return img, target
 
+class Food_memory_dataset(CUB_memory_dataset):
+     def mapper_refiner(self, mapper):
+        txtlabels = []
+        new_mapper = copy.deepcopy(mapper)
+        
+        for key1 in mapper.keys():
+            # key2 add
+            target = new_mapper[key1]
+            key2 = key1
+            new_mapper[key2] = target
+
+            # get txtlabels
+            key = ' '.join(key2.split('_'))
+            txtlabels.append([target, key])
+        ordered_txtlabels = ['' for _ in range(len(txtlabels))]
+        for target, key in txtlabels:
+            ordered_txtlabels[target] = key
+
+        return new_mapper, txtlabels
 class Webvision_dataset(Dataset):
     def __init__(self, root='webvision', label_file = '', synset2txtlabel={}, transform=None, len_memory=1000, webvisionsource='google'):
         self.transform = transform
@@ -859,6 +917,7 @@ class ImageNet1KDataModule(LightningDataModule):
 def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
     datasetkey = dataset if 'seed' not in dataset else dataset.split('_seed')[0]
     dataset_dict = {
+                    'food101standard': Food101DataModule_Standard,
                     'cub2011' : Cub2011DataModule,
                     'cub2011standard' : Cub2011DataModule_Standard,
                     'imagenetseen16shots' : ImageNetSeen16shotDataModule,
