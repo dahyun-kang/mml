@@ -7,9 +7,9 @@ if __name__ == '__main__':
     train_dir = './Train'
     val_dir = './Val'
 
-    train_file = './meta/meta/train.txt'
-    test_file = './meta/meta/text.txt'
-    label_idx_file = './meta/meta/classes.txt'
+    train_file = './meta/train.txt'
+    test_file = './meta/test.txt'
+    label_idx_file = './meta/classes.txt'
 
     # get classes name
     cnames = []
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     with open(train_file, 'r') as f:
         data = f.readlines()
     for line in data:
-        img_path = line + '.jpg'
+        img_path = line.rstrip() + '.jpg'
         from_dir = os.path.join(all_dir, img_path)
         to_dir = os.path.join(train_dir, img_path)
 
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     with open(test_file, 'r') as f:
         data = f.readlines()
     for line in data:
-        img_path = line + '.jpg'
+        img_path = line.rstrip() + '.jpg'
         from_dir = os.path.join(all_dir, img_path)
         to_dir = os.path.join(val_dir, img_path)
 
