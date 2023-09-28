@@ -387,7 +387,7 @@ class MemoryModularLearner(nn.Module):
                 knnlabel = label[indices]
                 cls_txt = cls_label[knnlabel]
 
-                cls_txt = [" ".join(t)  for t in cls_txt]
+                cls_txt = [" ".join(t)  for t in cls_txt]  # cls_txt[:, :, 1]
                 cls_txt = clip.tokenize(cls_txt, truncate=True)
                 return cls_txt
 
@@ -395,19 +395,14 @@ class MemoryModularLearner(nn.Module):
             clipfeat = self.backbone(x)
             knn_cls_tokens = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], label=self.img_label[stage], cls_label=self.cls_label[stage], k=self.args.ik)
 
-        retrfeat = self.backbone.encode_text(knn_cls_tokens.to(clipfeat.device))
-
-        clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
-        retrfeat_ = F.normalize(retrfeat, dim=-1, p=2)
-        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)  # to handle unseen
-
-        clip_logit = torch.einsum('c d, b d -> b c', proto_img_, clipfeat_)
-        retr_logit = torch.einsum('c d, b d -> b c', proto_img_, retrfeat_)
+            retrfeat = self.backbone.encode_text(knn_cls_tokens.to(clipfeat.device))
 
         # even worse
         # clip_logit_= F.normalize(clip_logit, dim=-1, p=2)
         # retr_logit = F.normalize(retr_logit, dim=-1, p=2)
 
+        clip_logit = self.linear(clipfeat)
+        retr_logit = self.linear(retrfeat)
         logit = (clip_logit + retr_logit) * self.args.multemp
 
         return logit
