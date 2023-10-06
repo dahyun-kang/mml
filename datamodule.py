@@ -356,6 +356,10 @@ class ImageNet100DataModule(AbstractDataModule):
                                           max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
                                           # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
 
+        # self.dataset_query['trn'] = self.dataset_shot['tst']  # linear on test, RAC
+        # self.dataset_query['val'] = self.dataset_query['tst']  # linear on test, RAC
+
+
         assert len(set(self.dataset_query['val'].img_path).intersection(set(self.dataset_shot['val'].img_path))) == 0
         assert len(set(self.dataset_query['tst'].img_path).intersection(set(self.dataset_shot['tst'].img_path))) == 0
 
@@ -477,6 +481,33 @@ class MiniImagenetDataModule(ImageNet100DataModule):
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
 
+
+class ImageNetHalf16shotDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_query_num_samples = 200  # val/test queries
+        self.dataset_root = kwargs['dataset']
+        self.len_shot = 16
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['val']
+
+
+class ImageNetUnseen4shotDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_query_num_samples = 200  # val/test queries
+        self.dataset_root = kwargs['dataset']
+        self.len_shot = 4
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['test']
+
+
 class ImageNetUnseen16shotDataModule(ImageNet100DataModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -498,6 +529,45 @@ class ImageNetUnseenfullshotDataModule(ImageNet100DataModule):
         self.max_query_num_samples = 200  # val/test queries
         self.dataset_root = 'ILSVRC_unseenfullshots'
         self.len_shot = 1100
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['test']
+
+
+class ImageNetUnseen64shotDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_query_num_samples = 200  # val/test queries
+        self.dataset_root = kwargs['dataset']
+        self.len_shot = 64
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['test']
+
+
+class ImageNetUnseen256shotDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_query_num_samples = 200  # val/test queries
+        self.dataset_root = kwargs['dataset']
+        self.len_shot = 256
+        self.train_subdirs = ['train']
+        self.val_subdirs = ['val']
+        self.test_subdirs = ['test']
+
+
+class ImageNetUnseen512shotDataModule(ImageNet100DataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = ImageNet100_Dataset
+
+        self.max_query_num_samples = 200  # val/test queries
+        self.dataset_root = kwargs['dataset']
+        self.len_shot = 512
         self.train_subdirs = ['train']
         self.val_subdirs = ['val']
         self.test_subdirs = ['test']
@@ -622,7 +692,7 @@ class Cub2011DataModule(ImageNet100DataModule):
         self.dataset_shot = {}
 
         self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
+                                          max_classes=self.max_classes, max_samples=5, transform=self.train_transform, is_memory=False, len_shot=0)
 
         self.dataset_query['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
@@ -670,14 +740,14 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
         self.dataset_shot = {}
 
         self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
+                                          max_classes=self.max_classes, max_samples=5, transform=self.train_transform, is_memory=False, len_shot=0)
         self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
                                           max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=0)
         self.dataset_query['tst'] = self.dataset_query['val']
 
-        self.dataset_shot['trn'] = None
-        self.dataset_shot['val'] = None
-        self.dataset_shot['tst'] = None
+        self.dataset_shot['trn'] = self.dataset_query['trn']
+        self.dataset_shot['val'] = self.dataset_shot['trn']
+        self.dataset_shot['tst'] = self.dataset_shot['trn']
 
         self.dataset_imgmem['trn'] = CUB_memory_dataset(root=root, memory_dir='memory', label_file='standard_label.json', transform=self.train_transform)
         self.dataset_imgmem['val'] = self.dataset_imgmem['trn']
@@ -703,7 +773,7 @@ class CUB_memory_dataset(Dataset):
     def mapper_refiner(self, mapper):
         txtlabels = []
         new_mapper = copy.deepcopy(mapper)
-        
+
         for key1 in mapper.keys():
             # key2 add
             target = new_mapper[key1]
@@ -751,7 +821,7 @@ class Food_memory_dataset(CUB_memory_dataset):
      def mapper_refiner(self, mapper):
         txtlabels = []
         new_mapper = copy.deepcopy(mapper)
-        
+
         for key1 in mapper.keys():
             # key2 add
             target = new_mapper[key1]
@@ -921,7 +991,12 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'cub2011' : Cub2011DataModule,
                     'cub2011standard' : Cub2011DataModule_Standard,
                     'imagenetseen16shots' : ImageNetSeen16shotDataModule,
+                    'imagenethalf16shots' : ImageNetHalf16shotDataModule,
+                    'imagenetunseen4shots' : ImageNetUnseen4shotDataModule,
                     'imagenetunseen16shots' : ImageNetUnseen16shotDataModule,
+                    'imagenetunseen64shots' : ImageNetUnseen64shotDataModule,
+                    'imagenetunseen256shots' : ImageNetUnseen256shotDataModule,
+                    'imagenetunseen512shots' : ImageNetUnseen512shotDataModule,
                     'imagenetunseenfullshots' : ImageNetUnseenfullshotDataModule,
                     'imagenet1K' : ImageNet1KDataModule,
                     }
