@@ -11,8 +11,6 @@ import json
 import copy
 
 from pytorch_lightning import seed_everything
-from sampler.ClassAwareSampler import ClassAwareSampler
-from sampler.WeightedSampler import WeightedDistributedSampler
 from text_data.preprocess import SentPreProcessor
 from text_data.prompt_template import imagenet_classes
 
@@ -43,12 +41,11 @@ class Transforms:
 
 
 class AbstractDataModule(LightningDataModule):
-    def __init__(self, datadir='data', dataset='', imgsize=224, batchsize=256, num_workers=0, transform_type=None, train_split=None, val_split=None, sampler=None):
+    def __init__(self, datadir='data', dataset='', imgsize=224, batchsize=256, num_workers=0, transform_type=None, train_split=None, val_split=None):
         super().__init__()
         self.save_hyperparameters()
         self.dataset = None
         self.dataset_query = {'trn': None, 'val': None}
-        self.sampler = None
         if transform_type == 'CLIP':
             self.train_transform = Transforms.clip_transform(imgsize)
             self.val_transform = Transforms.clip_transform(imgsize)
@@ -64,45 +61,8 @@ class AbstractDataModule(LightningDataModule):
         self.dataset_query['trn'] = self.dataset(root=self.hparams.datadir, split=self.hparams.train_split, transform=self.train_transform, download=True)
         self.dataset_query['val'] = self.dataset(root=self.hparams.datadir, split=self.hparams.val_split, transform=self.val_transform, download=True)
 
-    def sampler_loader(self):
-
-        def is_dist_avail_and_initialized():
-            if not dist.is_available():
-                return False
-            if not dist.is_initialized():
-                return False
-            return True
-
-        def get_world_size():
-            if not is_dist_avail_and_initialized():
-                return 1
-            return dist.get_world_size()
-
-
-        def get_rank():
-            if not is_dist_avail_and_initialized():
-                return 0
-            return dist.get_rank()
-
-        num_tasks = get_world_size()
-        global_rank = get_rank()
-        if self.hparams.sampler == 'ClassAware':
-            self.sampler = ClassAwareSampler(self.dataset_train, num_samples_cls=4)
-        elif self.hparams.sampler == 'SquareRoot':
-
-            training_labels = np.array(self.dataset_train.targets).astype(int)
-            train_class_counts = [len(training_labels[training_labels == l]) for l in range(self.num_classes)]
-            weights = 1. / torch.tensor(train_class_counts, dtype=torch.float)
-            weights.sqrt_()
-            samples_weights = weights[list(self.dataset_train.targets)]
-            self.sampler = WeightedDistributedSampler(
-                dataset=self.dataset_train, weights=samples_weights, replacement=True,
-                num_replicas=num_tasks, rank=global_rank, deterministic=True
-            )
-
     def train_dataloader(self):
-        self.sampler_loader()
-        return DataLoader(self.dataset_query['trn'], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=False if self.sampler else True, sampler=self.sampler)
+        return DataLoader(self.dataset_query['trn'], batch_size=self.hparams.batchsize, num_workers=self.hparams.num_workers, shuffle=True)
 
     def unshuffled_train_dataloader(self):
         if self.dataset_query['trn'] is None:
@@ -981,7 +941,7 @@ class ImageNet1KDataModule(LightningDataModule):
         return loader
 
 
-def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
+def return_datamodule(datapath, dataset, batchsize, backbone):
     datasetkey = dataset if 'seed' not in dataset else dataset.split('_seed')[0]
     dataset_dict = {
                     'food101standard': Food101DataModule_Standard,
@@ -1005,7 +965,6 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
         batchsize=batchsize,
         num_workers=8,
         transform_type=transform_type,
-        sampler=sampler
     )
 
     return datamodule

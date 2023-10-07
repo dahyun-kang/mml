@@ -37,11 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('--ntokens', type=int, default=0, help='Number of tokens')
     parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
-    # parser.add_argument('--nakata22', action='store_true', help='Flag to run Nataka et al., ECCV 2022')
     parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto', 'clipzeroshot'], help="Run a model don't have any differentiable parameters")
-    # parser.add_argument('--LT', action='store_true', help='Flag to run Longtailed Learning')
-    parser.add_argument('--sampler', type=str, default=None, choices=['ClassAware', 'SquareRoot'], help='Choose your sampler for training')
-    # parser.add_argument('--Decoupled', type=str, default=None, choices=['joint', 'cRT', 'tau', 'feat_extract'], help='Flag to run reproducing expriement of Decoupled Learning')
     parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
     parser.add_argument('--episodiceval', action='store_true', help='Flag for episodic evaluation')
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
@@ -54,7 +50,7 @@ if __name__ == '__main__':
         args.datapath = os.path.join(args.datapath, 'places365')
 
     checkpoint_callback = CustomCheckpoint(args)
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone, args.sampler)
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
     model = MemoryModularLearnerTrainer(args, dm=dm)
 
     if args.runfree:
