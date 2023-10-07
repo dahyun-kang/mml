@@ -52,9 +52,6 @@ class AbstractDataModule(LightningDataModule):
         if transform_type == 'CLIP':
             self.train_transform = Transforms.clip_transform(imgsize)
             self.val_transform = Transforms.clip_transform(imgsize)
-        elif transform_type == 'LT':
-            self.train_transform = Transforms.LT_train_transform(imgsize)
-            self.val_transform = Transforms.LT_val_transform(imgsize)
         else:
             self.train_transform = Transforms.train_transform(imgsize)
             self.val_transform = Transforms.val_transform(imgsize)
@@ -1000,7 +997,7 @@ def return_datamodule(datapath, dataset, batchsize, backbone, sampler = None):
                     'imagenetunseenfullshots' : ImageNetUnseenfullshotDataModule,
                     'imagenet1K' : ImageNet1KDataModule,
                     }
-    transform_type = 'CLIP'if 'clip' in backbone and not 'LT' in dataset else 'LT' if 'LT' in dataset else None
+    transform_type = 'CLIP' if 'clip' in backbone else None
     datamodule = dataset_dict[datasetkey](
         datadir=datapath,
         dataset=dataset,

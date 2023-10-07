@@ -42,14 +42,6 @@ class MemoryModularLearnerTrainer(LightningModule):
         self.count_all[stage] += count_all_batch
         self.loss_all[stage].append(loss)
 
-        if self.args.LT:
-            raise NotImplementedError('trn/val/tst split not considered')
-            correct = (preds == y).int()
-
-            for ans, lbl in zip(correct.tolist(), y.tolist()):
-                self.count_class_correct[lbl] += ans
-                self.count_class_valimgs[lbl] += 1
-
     def each_step(self, batch, stage=None):
         self.learner.backbone.eval()
         x, y = batch
@@ -89,28 +81,6 @@ class MemoryModularLearnerTrainer(LightningModule):
         self.count_correct[stage] = 0.
         self.count_all[stage] = 0.
         self.loss_all[stage] = []
-
-        if self.args.LT:
-            # You will come across self.count_class_correct undefined error. You can define it in the
-            # class initializer and re-initialize it in this function after use
-            raise NotImplementedError('trn/val acc compuation not implemented')
-            many_shot = []
-            medium_shot = []
-            few_shot = []
-
-            for c in range(self.dm.num_classes):
-                if self.train_class_count[c] > self.args.many_shot_thr:
-                    many_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-                elif self.train_class_count[c] < self.args.low_shot_thr:
-                    few_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-                else:
-                    medium_shot.append((self.count_class_correct[c] / self.count_class_valimgs[c]))
-
-            if len(many_shot) == 0: many_shot.append(0)
-            if len(medium_shot) == 0: medium_shot.append(0)
-            if len(few_shot) == 0: few_shot.append(0)
-
-            result += f" | val_many: {np.mean(many_shot)*100.:.2f} | val_medium: {np.mean(medium_shot)*100.:.2f} | val_few: {np.mean(few_shot)*100.:.2f}"
 
         result = "\n\n\n" + result + "\n"
         print(result)
