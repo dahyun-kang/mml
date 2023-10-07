@@ -24,62 +24,28 @@ class MemoryModularLearner(nn.Module):
         self.args = args
         self.dm = dm
         self.backbone = self._init_backbone()
-        self.dim = 768 if self.args.backbone == 'clipvitl' else 512
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
-
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
 
         self.attn_txt = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.attn_img = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.loss_fn = nn.CrossEntropyLoss()
-
         # self.generic_tokens = self._init_generic_tokens()
 
     def _init_backbone(self):
         """ Init pretrained backbone """
-        if 'resnet' in self.args.backbone:
-            if self.args.backbone == 'resnet18':
-                model = torchvision.models.resnet18(weights='IMAGENET1K_V1', num_classes=1000)
-            elif self.args.backbone == 'resnet50':
-                model = torchvision.models.resnet50(weights='IMAGENET1K_V1', num_classes=1000)
-            elif self.args.backbone == 'resnet50coco':
-                model = torchvision.models.segmentation.deeplabv3_resnet50(weights='COCO_WITH_VOC_LABELS_V1')
-                model.classifier = nn.Identity()
-                model.aux_classifier = nn.Identity()
-            else:
-                raise NotImplementedError
-
-            model.fc = nn.Identity()
-            # model.avgpool = nn.Identity()
-
-            '''
-            # use this for training from scratch
-            # Retain img size at the shallowest layer
-            if 'cifar' in self.args.dataset and not args.nakata22:
-                model.conv1 = nn.Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-                model.maxpool = nn.Identity()
-            '''
-        elif self.args.backbone == 'clipvitb':
+        if self.args.backbone == 'clipvitb':
             model, preprocess = clip.load("ViT-B/32")
-            model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
+            self.dim = 512
         elif self.args.backbone == 'clipvitl':
             model, preprocess = clip.load("ViT-L/14")
-            model.forward = model.encode_image  # TODO: function overriding; refrain this type of coding
+            self.dim = 768
         elif self.args.backbone == 'clipRN50':
             model, preprocess = clip.load("RN50")
-            model.forward = model.encode_image
-        elif self.args.backbone == 'mobilenetcoco':
-            model = torchvision.models.segmentation.deeplabv3_mobilenet_v3_large(weights='COCO_WITH_VOC_LABELS_V1')
-            model.classifier = nn.Identity()
-            model.aux_classifier = nn.Identity()
+            self.dim = 512
 
         model.requires_grad_(requires_grad=False)
         # model.visual.requires_grad_(requires_grad=False)  # RAC
-        '''
-        for m in model.modules():
-            if isinstance(m, nn.LayerNorm):
-                model.requires_grad_(requires_grad=True)
-        '''
         return model
 
     def _init_generic_tokens(self):
@@ -88,108 +54,99 @@ class MemoryModularLearner(nn.Module):
         # moved to self.on_fit_start; should be called after params being loaded to cuda
         return generic_tokens
 
+    def _load_memory(self, mem_dataloader, split, modality='img'):
+        embed_path = osp.join(self.cachedir, f'{split}_{modality}_embed.pth')
+        label_path = osp.join(self.cachedir, f'{split}_{modality}_label.pth')
+
+        if osp.exists(embed_path):
+            print(f'\n *** [{split}] loading {modality} embed/label checkpoints from {self.cachedir}. *** \n')
+            embed = torch.load(embed_path)
+            label = torch.load(label_path)
+        else:
+            print(f'\n *** [{split}] embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n')
+            torch.multiprocessing.set_sharing_strategy('file_system')
+            embed, label = self._init_memory(mem_dataloader, split, modality=modality)
+            if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
+            torch.save(embed, embed_path)
+            torch.save(label, label_path)
+        return embed, label
+
+    def _load_prototype(self, img_embed, img_label, txt_embed, txt_label, usefewshot):
+        img_proto_list = []
+        txt_proto_list = []
+
+        # iterate over classes
+        for c in torch.unique(txt_label):
+            img_embed_c = img_embed[img_label == c]
+            txt_embed_c = txt_embed[txt_label == c]
+            img_embed_c_l2 = F.normalize(img_embed_c, dim=-1, p=2)
+            txt_embed_c_l2 = F.normalize(txt_embed_c, dim=-1, p=2)
+            sim = torch.einsum('n d, m d -> n m', img_embed_c_l2, txt_embed_c_l2)
+
+            # txt: col-wise sum
+            txt_k = min(len(txt_embed_c), 16)  # TODO: make it args
+            txt_sim = sim.sum(dim=0)
+            _, txt_indices = txt_sim.topk(k=txt_k, dim=-1, largest=True, sorted=True)
+            txt_proto_list.append(txt_embed_c[txt_indices].mean(dim=0))
+
+            if len(img_embed_c) == 0:  # exception handler: flickr doesn't have c=262th class!! x.x
+                img_proto_list.append(txt_embed_c[txt_indices].mean(dim=0))
+                continue
+
+            if usefewshot:
+                img_proto_list.append(img_embed_c.mean(dim=0))
+            else:
+                # img: row-wise sum
+                img_k = min(len(img_embed_c), 16)  # TODO: make it args
+                img_sim = sim.sum(dim=-1)
+                _, img_indices = img_sim.topk(k=img_k, dim=-1, largest=True, sorted=True)
+                img_proto_list.append(img_embed_c[img_indices].mean(dim=0))
+
+        img_proto = torch.stack(img_proto_list, dim=0)
+        txt_proto = torch.stack(txt_proto_list, dim=0)
+        return img_proto, txt_proto
+
     def _load_memory_and_prototype(self, splits=['trn', 'val']):
-
-        self.img_embed = {}
-        self.img_label = {}
-        self.img_proto = {}
-        self.txt_embed = {}
-        self.txt_label = {}
-        self.txt_proto = {}
-        self.cls_label = {}
-        self.cls_prmpt = {}
-
-        for split in splits:
-            self.img_embed[split] = None
-            self.img_label[split] = None
-            self.img_proto[split] = None
-            self.txt_embed[split] = None
-            self.txt_label[split] = None
-            self.txt_proto[split] = None
-            self.cls_label[split] = None
-            self.cls_prmpt[split] = None
+        self.img_embed = {split: None for split in splits}
+        self.img_label = {split: None for split in splits}
+        self.img_proto = {split: None for split in splits}
+        self.txt_embed = {split: None for split in splits}
+        self.txt_label = {split: None for split in splits}
+        self.txt_proto = {split: None for split in splits}
 
         # load or save memory
         for split in splits:
             img_loader = self.dm.imgmem_dataloader(split)
             txt_loader = self.dm.txtmem_dataloader(split)
 
-            img_embed_path = osp.join(self.cachedir, f'{split}_img_embed.pth')
-            img_label_path = osp.join(self.cachedir, f'{split}_img_label.pth')
-            txt_embed_path = osp.join(self.cachedir, f'{split}_txt_embed.pth')
-            txt_label_path = osp.join(self.cachedir, f'{split}_txt_label.pth')
-
-            if osp.exists(img_embed_path):
-                print(f'\n *** [{split}] loading embed/label checkpoints from {self.cachedir}. *** \n')
-                img_embed = torch.load(img_embed_path) ; img_label = torch.load(img_label_path)
-                txt_embed = torch.load(txt_embed_path) ; txt_label = torch.load(txt_label_path)
-            else:
-                print(f'\n *** [{split}] embed/label not found. Generating embed/label checkpoints and saving them at {self.cachedir}. *** \n')
-                torch.multiprocessing.set_sharing_strategy('file_system')
-                img_embed, img_label = self._init_memory(img_loader, split, modality='img')
-                txt_embed, txt_label = self._init_memory(txt_loader, split, modality='txt')
-                if not osp.exists(self.cachedir): os.makedirs(self.cachedir)
-                torch.save(img_embed, img_embed_path) ; torch.save(img_label, img_label_path)
-                torch.save(txt_embed, txt_embed_path) ; torch.save(txt_label, txt_label_path)
-
-            self.img_embed[split] = img_embed ; self.txt_embed[split] = txt_embed
-            self.img_label[split] = img_label ; self.txt_label[split] = txt_label  # actually not used in current forward
-
-            num_samples = int(img_embed.shape[0]) // (int(max(img_label)) + 1)
-            print(f"\nLoaded memory info: #_of_samples = {img_embed.shape[0]} ({max(img_label)+1}x{num_samples}), dim_of_samples = {img_embed.shape[1]}")
-
-            # memory-based prototype generation
-            img_proto_list = []
-            txt_proto_list = []
+            self.img_embed[split], self.img_label[split] = self._load_memory(img_loader, split=split, modality='img')
+            self.txt_embed[split], self.txt_label[split] = self._load_memory(txt_loader, split=split, modality='txt')
 
             # generate few-shot prototype
             if self.args.usefewshot:
                 imgshot_loader = self.dm.shot_dataloader(split)
                 torch.multiprocessing.set_sharing_strategy('file_system')
-                img_embed, img_label = self._init_memory(imgshot_loader, split, modality='img')
+                img_embed_fewshot, img_label_fewshot = self._init_memory(imgshot_loader, split=split, modality='img')
+                img_proto, txt_proto = self._load_prototype(img_embed_fewshot, img_label_fewshot, self.txt_embed[split], self.txt_label[split], usefewshot=True)
+            else:
+                img_proto, txt_proto = self._load_prototype(self.img_embed[split], self.img_label[split], self.txt_embed[split], self.txt_label[split], usefewshot=False)
 
-            for c in torch.unique(txt_label):
-                img_embed_c = img_embed[img_label == c]
-                txt_embed_c = txt_embed[txt_label == c]
-                img_embed_c_l2 = F.normalize(img_embed_c, dim=-1, p=2)
-                txt_embed_c_l2 = F.normalize(txt_embed_c, dim=-1, p=2)
-                sim = torch.einsum('n d, m d -> n m', img_embed_c_l2, txt_embed_c_l2)
+            # memory-based prototype generation
+            self.img_proto[split], self.txt_proto[split] = img_proto, txt_proto
+            print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
 
-                txt_k = min(len(txt_embed_c), 16)  # TODO: make it args
-                img_k = min(len(img_embed_c), 16)  # TODO: make it args
+        if self.args.runfree == 'clipzeroshot':  # or RAC
+            self.cls_label = {split: None for split in splits}
+            self.cls_prmpt = {split: None for split in splits}  # CLIP-stype cls prompt
 
-                # txt: col-wise sum
-                txt_sim = sim.sum(dim=0)
-                _, txt_indices = txt_sim.topk(k=txt_k, dim=-1, largest=True, sorted=True)
-                txt_proto_list.append(txt_embed_c[txt_indices].mean(dim=0))
+            for split in splits:
+                txtlabels = []
+                for target in range(len(img_label.unique())):
+                    txtlabel = img_loader.dataset.txtlabels[target] # .split(', ')[0]
+                    # txtlabel = self.dm.txtlabels[target]
+                    txtlabels.append(txtlabel)
+                self.cls_label[split] = np.array(txtlabels)
 
-                if len(img_embed_c) == 0:  # flickr doesn't have c=262th class!! x.x
-                    img_proto_list.append(txt_embed_c[txt_indices].mean(dim=0))
-                    continue
-
-                # img: row-wise sum
-                if not self.args.usefewshot:
-                    img_sim = sim.sum(dim=-1)
-                    _, img_indices = img_sim.topk(k=img_k, dim=-1, largest=True, sorted=True)
-                    img_proto_list.append(img_embed_c[img_indices].mean(dim=0))
-
-            if self.args.usefewshot:
-                img_label_idx = img_label.unique().sort()[0]
-                img_proto_list = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
-
-            self.img_proto[split] = torch.stack(img_proto_list, dim=0)
-            self.txt_proto[split] = torch.stack(txt_proto_list, dim=0)
-
-            # class text label  # RAC
-            txtlabels = []
-            for target in range(len(img_label.unique())):
-                txtlabel = img_loader.dataset.txtlabels[target] # .split(', ')[0]
-                # txtlabel = self.dm.txtlabels[target]
-                txtlabels.append(txtlabel)
-
-            self.cls_label[split] = np.array(txtlabels)
-
-            if self.args.runfree == 'clipzeroshot':
                 txtlabelembed = []
                 for txtlabel in self.cls_label[split]:
                     txtlabel = [template.format(txtlabel) for template in prompt_templates]
@@ -200,11 +157,7 @@ class MemoryModularLearner(nn.Module):
                         txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
                     txtlabelembed.append(txtlabelproto)
                 self.cls_prmpt[split] = torch.stack(txtlabelembed, dim=0)
-
-            print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
-
-        # trn_img_label_idx = self.img_label['trn'].unique().sort()[0]
-        # self.train_class_count = [torch.sum(self.img_label['trn'] == c) for c in trn_img_label_idx]
+            print(f"\n{split} class prompt loaded")
 
     def _load_episodic_test_memory_and_prototype(self):
         split = 'tst'  # by default
@@ -260,7 +213,7 @@ class MemoryModularLearner(nn.Module):
             for x, y in tqdm(loader, desc=f'Generating {modality} {split} emb'):
                 x = x.cuda()
                 if modality == 'img':
-                    out = backbone(x)  # = backbone.encode_image(x)
+                    out = backbone.encode_image(x)
                 elif modality == 'txt':
                     out = backbone.encode_text(x)
                 embed_list.append(out)
@@ -275,7 +228,7 @@ class MemoryModularLearner(nn.Module):
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree naiveproto --eval --nowandb
     def forward_naive_protomatching(self, x, y, stage=None):
         with torch.no_grad():
-            out = self.backbone(x)
+            out = self.backbone.encode_image(x)
 
         assert self.args.eval, "This method can't be learned"
 
@@ -291,7 +244,7 @@ class MemoryModularLearner(nn.Module):
     # python main.py --datapath /home/eunchan/datasets/ --backbone clipvitb --dataset imagenet100 --logpath log --runfree nakata22 --k 1 --eval --nowandb
     def forward_nakata22(self, x, y, stage=None):
         with torch.no_grad():
-            out = self.backbone(x)
+            out = self.backbone.encode_image(x)
 
         # assert self.args.eval, "This method can't be learned"  # TODO: add episodiceval
 
@@ -325,7 +278,7 @@ class MemoryModularLearner(nn.Module):
     # CUDA_VISIBLE_DEVICES=5 python main.py --datapath /home/dahyun/datasets/ --backbone clipvitb --dataset imagenetseen16shots --logpath 0914_p23_16shot --runfree clipzeroshot --eval --nowandb
     def forward_clipzeroshot(self, x, y, stage=None):
         with torch.no_grad():
-            clipfeat = self.backbone(x)
+            clipfeat = self.backbone.encode_image(x)
             clipfeat_ = F.normalize(clipfeat.to(x.device), dim=-1, p=2)
             proto_txt_ = F.normalize(self.cls_prmpt[stage].to(x.device), dim=-1, p=2)
 
@@ -333,7 +286,6 @@ class MemoryModularLearner(nn.Module):
 
         return sim_clip
 
-    # def forward_0804_p20_trainqry_mem_1nnexclude_l2search_crossmodal_noclipbase_imgknn_textknn_logitfusion_nokvinput(self, x, y, stage):
     # def forward_0909_p21_addclipfeat_txtembedl2simlargest16shotproto(self, x, y, stage):
     def forward(self, x, y, stage):
         def retrieve_knn(x, mem, k):
@@ -348,7 +300,7 @@ class MemoryModularLearner(nn.Module):
                 return knnemb
 
         with torch.no_grad():
-            clipfeat = self.backbone(x)
+            clipfeat = self.backbone.encode_image(x)
 
         kv_txt = retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.tk)
         kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.ik)
@@ -392,7 +344,7 @@ class MemoryModularLearner(nn.Module):
                 return cls_txt
 
         with torch.no_grad():
-            clipfeat = self.backbone(x)
+            clipfeat = self.backbone.encode_image(x)
             knn_cls_tokens = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], label=self.img_label[stage], cls_label=self.cls_label[stage], k=self.args.ik)
 
             retrfeat = self.backbone.encode_text(knn_cls_tokens.to(clipfeat.device))
