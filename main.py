@@ -86,7 +86,7 @@ if __name__ == '__main__':
             std_acc = torch.std(acc_list[:i + 1])
             ci = std_acc * 1.96 / math.sqrt(i + 1)  # 95% confidence interval
             print(f'{i + 1}/{nepisode} avg acc: {avg_acc} +- {ci}')
-        return
+        exit()
 
     if args.eval:
         if not args.runfree:
