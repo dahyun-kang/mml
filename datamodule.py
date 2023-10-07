@@ -126,38 +126,30 @@ Attribute (may someone needed....)
         number of sentences of each classes. same as #_sentences
 """
 class ImageNet100_Dataset(Dataset):
-    def __init__(self, root, train, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_classes = None, max_samples = None, transform=None, is_memory=False, len_shot=1000):
+    def __init__(self, root, sub_dirs = [], label_file = '', label_mapping_file = 'labels.txt', wiki_dir = 'wiki', max_samples = None, transform=None, is_shot=False, len_shot=16):
         self.root = root
 
-        # memory_split cant handle variable query length. Let's fix the len of the memory and set the remainder as queries
+        self.transform = transform
         self.len_shot = len_shot # query : [0 ~ (-len_shot - 1 or max_samples)], memory : [len_shot ~ to the last elem]
-
         self.sub_dirs = sub_dirs # choose in ['train.X1', 'train.X2', 'train.X3', 'train.X4', 'val.X']
         self.sub_idxs = [sorted(os.listdir(os.path.join(self.root, subdir))) for subdir in self.sub_dirs]
 
-        if not train: assert (label_file != '' and os.path.exists(os.path.join(root,label_file))), "label file needed for non-train dataset"
         idxs_cls = self._label_generator(root, label_file)
         loaded_idxs = idxs_cls.keys()
         self.loaded_idxs = sorted(loaded_idxs, key = lambda item: idxs_cls[item]) # sort idxs with 0 ~ (# of classes - 1) order
-        if max_classes:
-            self.loaded_idxs = self.loaded_idxs[:max_classes]
-
         self.num_classes = len(self.loaded_idxs)
-        # deprecated to handle variable num of queries
-        # self.num_samples = max_samples if max_samples else self.total_samples - self.memory_split if is_memory else self.memory_split
 
         self.img_path = []
         self.targets = []
-        self.transform = transform
 
         num_samples_count = [0] * self.num_classes
 
-        for i, idxs in enumerate(self.sub_idxs):
-            for idx in idxs:
+        for i, idxs in enumerate(self.sub_idxs):  # iterate over classes
+            for idx in idxs:  # iterate over instances
                 if idx not in self.loaded_idxs: continue
 
                 imgdirs = sorted(os.listdir(os.path.join(root, self.sub_dirs[i], idx)))
-                if is_memory:
+                if is_shot:
                     num_samples_i = self.len_shot if self.len_shot else len(imgdirs)
                     imgdirs = imgdirs[-num_samples_i:]
                     # imgdirs = imgdirs[200:]  # full
@@ -175,7 +167,6 @@ class ImageNet100_Dataset(Dataset):
 
                     num_samples_count[target] += 1
 
-        # assert sum(num_samples_count) == self.num_samples * self.num_classes
         assert self.num_classes == max(self.targets) + 1
 
         # sentence token generator
@@ -268,7 +259,6 @@ class ImageNet100DataModule(AbstractDataModule):
         super().__init__(*args, **kwargs)
         self.dataset = ImageNet100_Dataset
 
-        self.max_classes = None
         self.max_query_num_samples = 1100
         self.dataset_root = 'imagenet100'
         self.len_shot = 200
@@ -280,7 +270,6 @@ class ImageNet100DataModule(AbstractDataModule):
         # if episodiceval: return self.setup_episodic_eval()
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
 
         synset2txtlabel = self.imagenetsynset2txtlabel()
 
@@ -289,8 +278,8 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset_txtmem = {}
         self.dataset_shot = {}
 
-        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
+        self.dataset_query['trn'] = self.dataset(root, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=None, transform=self.train_transform, is_shot=False, len_shot=0)
         '''
         datalen = len(self.dataset_train.targets)
         numclass = max(self.dataset_train.targets) + 1
@@ -301,17 +290,17 @@ class ImageNet100DataModule(AbstractDataModule):
         self.dataset_train.targets = targets.tolist()
         '''
 
-        self.dataset_query['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
-        self.dataset_query['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+        self.dataset_query['val'] = self.dataset(root, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=False, len_shot=self.len_shot)
+        self.dataset_query['tst'] = self.dataset(root, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=False, len_shot=self.len_shot)
         self.dataset_shot['trn'] = self.dataset_query['trn']
-        self.dataset_shot['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
-                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
-        self.dataset_shot['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
-                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
+        self.dataset_shot['val'] = self.dataset(root, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=None, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)
+                                          # max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)  # full
+        self.dataset_shot['tst'] = self.dataset(root, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=None, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)
+                                          # max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)  # full
 
         # self.dataset_query['trn'] = self.dataset_shot['tst']  # linear on test, RAC
         # self.dataset_query['val'] = self.dataset_query['tst']  # linear on test, RAC
@@ -359,11 +348,10 @@ class ImageNet100DataModule(AbstractDataModule):
     def setup_episodic_eval(self, nclass=5, nshot=5, nquery=15):
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
 
         if not hasattr(self, 'dataset_test_all'):
-            self.dataset_test_all = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                                max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=None)
+            self.dataset_test_all = self.dataset(root, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file,
+                                                max_samples=None, transform=self.val_transform, is_shot=True, len_shot=None)
             self.dataset_test_memory_all = Webvision_dataset(root=os.path.join(self.hparams.datadir, 'webvisionv1'),
                                                          label_file=os.path.join(root, 'tst_label.json'),
                                                          transform=self.val_transform, len_memory=1000)
@@ -541,7 +529,6 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
     def setup(self, stage: str):
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
 
         synset2txtlabel = self.imagenetsynset2txtlabel()
 
@@ -550,8 +537,8 @@ class ImageNet100DataModule_Standard(ImageNet100DataModule):
         self.dataset_txtmem = {}
         self.dataset_shot = {}
 
-        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
+        self.dataset_query['trn'] = self.dataset(root, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=None, transform=self.train_transform, is_shot=False, len_shot=0)
         self.dataset_query['val'] = ImageNet1K(split='val', datadir=self.hparams.datadir, transform=self.val_transform, label_file = f'{self.dataset_root}/standard_label.json', synset2txtlabel=synset2txtlabel)
         self.dataset_query['tst'] = self.dataset_query['val']
 
@@ -601,17 +588,16 @@ class Food101DataModule_Standard(ImageNet100DataModule_Standard):
     def setup(self, stage: str):
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
 
         self.dataset_query = {}
         self.dataset_imgmem = {}
         self.dataset_txtmem = {}
         self.dataset_shot = {}
 
-        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=None, transform=self.train_transform, is_memory=False, len_shot=0)
-        self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=0)
+        self.dataset_query['trn'] = self.dataset(root, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=None, transform=self.train_transform, is_shot=False, len_shot=0)
+        self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=False, len_shot=0)
         self.dataset_query['tst'] = self.dataset_query['val']
 
         self.dataset_shot['trn'] = None
@@ -641,27 +627,26 @@ class Cub2011DataModule(ImageNet100DataModule):
         # if episodiceval: return self.setup_episodic_eval()
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
 
         self.dataset_query = {}
         self.dataset_imgmem = {}
         self.dataset_txtmem = {}
         self.dataset_shot = {}
 
-        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=5, transform=self.train_transform, is_memory=False, len_shot=0)
+        self.dataset_query['trn'] = self.dataset(root, sub_dirs=self.train_subdirs, label_file='trn_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=5, transform=self.train_transform, is_shot=False, len_shot=0)
 
-        self.dataset_query['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
-        self.dataset_query['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=self.len_shot)
+        self.dataset_query['val'] = self.dataset(root, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=False, len_shot=self.len_shot)
+        self.dataset_query['tst'] = self.dataset(root, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=False, len_shot=self.len_shot)
         self.dataset_shot['trn'] = self.dataset_query['trn']
-        self.dataset_shot['val'] = self.dataset(root, train=True, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
-                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
-        self.dataset_shot['tst'] = self.dataset(root, train=True, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=None, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)
-                                          # max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=True, len_shot=self.len_shot)  # full
+        self.dataset_shot['val'] = self.dataset(root, sub_dirs=self.val_subdirs, label_file='val_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=None, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)
+                                          # max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)  # full
+        self.dataset_shot['tst'] = self.dataset(root, sub_dirs=self.test_subdirs, label_file='tst_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=None, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)
+                                          # max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=True, len_shot=self.len_shot)  # full
 
         assert len(set(self.dataset_query['val'].img_path).intersection(set(self.dataset_shot['val'].img_path))) == 0
         assert len(set(self.dataset_query['tst'].img_path).intersection(set(self.dataset_shot['tst'].img_path))) == 0
@@ -674,6 +659,7 @@ class Cub2011DataModule(ImageNet100DataModule):
         self.dataset_txtmem['trn'] = TextToken_Dataset(self.dataset_query['trn'].text_tokens, self.dataset_query['trn'].num_sents)
         self.dataset_txtmem['val'] = TextToken_Dataset(self.dataset_query['val'].text_tokens, self.dataset_query['val'].num_sents)
         self.dataset_txtmem['tst'] = TextToken_Dataset(self.dataset_query['tst'].text_tokens, self.dataset_query['tst'].num_sents)
+
 
 class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
     def __init__(self, *args, **kwargs):
@@ -689,17 +675,16 @@ class Cub2011DataModule_Standard(ImageNet100DataModule_Standard):
     def setup(self, stage: str):
         root = os.path.join(self.hparams.datadir, self.dataset_root)
         label_mapping_file = 'labels.txt'
-        wiki_dir = 'wiki'
 
         self.dataset_query = {}
         self.dataset_imgmem = {}
         self.dataset_txtmem = {}
         self.dataset_shot = {}
 
-        self.dataset_query['trn'] = self.dataset(root, train=True, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=self.max_classes, max_samples=5, transform=self.train_transform, is_memory=False, len_shot=0)
-        self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file, wiki_dir=wiki_dir,
-                                          max_classes=None, max_samples=self.max_query_num_samples, transform=self.val_transform, is_memory=False, len_shot=0)
+        self.dataset_query['trn'] = self.dataset(root, sub_dirs=self.train_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=5, transform=self.train_transform, is_shot=False, len_shot=0)
+        self.dataset_query['val'] = self.dataset(root, train=False, sub_dirs=self.val_subdirs, label_file='standard_label.json', label_mapping_file=label_mapping_file,
+                                          max_samples=self.max_query_num_samples, transform=self.val_transform, is_shot=False, len_shot=0)
         self.dataset_query['tst'] = self.dataset_query['val']
 
         self.dataset_shot['trn'] = self.dataset_query['trn']
@@ -968,4 +953,3 @@ def return_datamodule(datapath, dataset, batchsize, backbone):
     )
 
     return datamodule
-
