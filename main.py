@@ -29,6 +29,7 @@ if __name__ == '__main__':
     parser.add_argument('--backbone', type=str, default='resnet18', help='Backbone; clip-trained model should have the keywoard \"clip\"')
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
+    parser.add_argument('--shot', type=int, default=16, help='M shots')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
     parser.add_argument('--wd', type=float, default=1e-2, help='Weight decay')
     parser.add_argument('--multemp', type=float, default=16., help='Multiplying temperature')
@@ -50,7 +51,7 @@ if __name__ == '__main__':
         args.datapath = os.path.join(args.datapath, 'places365')
 
     checkpoint_callback = CustomCheckpoint(args)
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.backbone)
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.shot)
     model = MemoryModularLearnerTrainer(args, dm=dm)
 
     if args.runfree:

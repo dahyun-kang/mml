@@ -4,16 +4,42 @@ import copy
 from PIL import Image
 
 import torch
+import torchvision
 from torch.utils.data import Dataset
 
 from text_data.preprocess import SentPreProcessor
 
 
+class Transforms:
+    @staticmethod
+    def clip_transform(n_px):
+        '''
+        https://github.com/openai/CLIP/blob/main/clip/clip.py
+        '''
+        try:
+            from torchvision.transforms import InterpolationMode
+            BICUBIC = InterpolationMode.BICUBIC
+        except ImportError:
+            from PIL import Image
+            BICUBIC = Image.BICUBIC
+
+        def _convert_image_to_rgb(image):
+            return image.convert("RGB")
+
+        return torchvision.transforms.Compose([
+            torchvision.transforms.Resize(n_px, interpolation=BICUBIC),
+            torchvision.transforms.CenterCrop(n_px),
+            _convert_image_to_rgb,
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+        ])
+
+
 class SubsetDataset(Dataset):
-    def __init__(self, data, targets, transform=None):
+    def __init__(self, data, targets, imgsize=224):
         self.data = data
         self.targets = targets
-        self.transform = transform
+        self.transform = Transforms.clip_transform(imgsize)
 
     def __getitem__(self, index):
 
@@ -69,7 +95,7 @@ class TextTokenMemoryDataset(Dataset):
 
 
 """
-ClassDisjointAbstractDataset
+DisjointClassDataset
     * split_dirs : str
         split idenfied by dirs e.g. 'train', 'val', 'test'
     * label_file : str
@@ -80,9 +106,9 @@ ClassDisjointAbstractDataset
     * classids : list
         The indecies that dataset actually consist of. It look like ['n01440764', 'n01484850', ....]
 """
-class ClassDisjointAbstractDataset(Dataset):
-    def __init__(self, root, split_dir='train', label_file='trn_label.json', max_samples=None, transform=None, is_shot=False, len_shot=16):
-        self.transform = transform
+class DisjointClassDataset(Dataset):
+    def __init__(self, root, split_dir='train', label_file='trn_label.json', nsamples=None, is_shot=False, nshot=16, imgsize=224):
+        self.transform = Transforms.clip_transform(imgsize)
 
         # directory-identified classes
         classdirnames = sorted(os.listdir(os.path.join(root, split_dir)))
@@ -95,16 +121,16 @@ class ClassDisjointAbstractDataset(Dataset):
         for classid in self.classids:
             imgpaths_c = sorted(os.listdir(os.path.join(root, split_dir, classid)))
 
-            # query: [0 ~ (-len_shot - 1 or max_samples)],
-            # shot: [len_shot ~ to the last elem]
+            # query: [0 ~ (-nshot - 1 or nsamples)],
+            # shot: [nshot ~ to the last elem]
             if is_shot:
-                num_samples_c = len_shot if len_shot else len(imgpaths_c)
-                imgpaths_c = imgpaths_c[-num_samples_c:]
+                nsamples_c = nshot if nshot else len(imgpaths_c)
+                imgpaths_c = imgpaths_c[-nsamples_c:]
                 # imgpaths_c = imgdirs[200:]  # full
             else:
-                num_samples_c = min(max_samples, len(imgpaths_c) - len_shot) if max_samples else len(imgpaths_c) - len_shot
-                # num_samples_c = max_samples if max_samples else len(imgpaths_c) - len_shot  # full
-                imgpaths_c = imgpaths_c[:num_samples_c]
+                nsamples_c = min(nsamples, len(imgpaths_c) - nshot) if nsamples else len(imgpaths_c) - nshot
+                # nsamples_c = nsamples if nsamples else len(imgpaths_c) - nshot  # full
+                imgpaths_c = imgpaths_c[:nsamples_c]
 
             for imgpath in imgpaths_c:
                 imgabspath = os.path.join(root, split_dir, classid, imgpath)
@@ -152,8 +178,8 @@ class ClassDisjointAbstractDataset(Dataset):
 
 
 class CUBMemoryDataset(Dataset):
-    def __init__(self, root, memory_dir='memory', label_file='standard_label.json', transform=None):
-        self.transform = transform
+    def __init__(self, root, memory_dir='memory', label_file='standard_label.json', imgsize=224):
+        self.transform = Transforms.clip_transform(imgsize)
         self.label_file = label_file
 
         self.memory_dir = os.path.join(root, memory_dir)
@@ -234,8 +260,8 @@ class FoodMemoryDataset(CUBMemoryDataset):
 
 
 class WebvisionMemoryDataset(Dataset):
-    def __init__(self, root='webvision', label_file = '', synset2txtlabel={}, transform=None, len_memory=1000, webvisionsource='google'):
-        self.transform = transform
+    def __init__(self, root='webvision', label_file = '', synset2txtlabel={}, len_memory=1000, webvisionsource='google', imgsize=224):
+        self.transform = Transforms.clip_transform(imgsize)
 
         # n0xxxxxxx -> 'web' 0 ~ 999
         synset2webtarget = {}
@@ -258,7 +284,7 @@ class WebvisionMemoryDataset(Dataset):
 
         self.img_path = []
         self.targets = []
-        num_samples_count = [0] * num_classes
+        nsamples_count = [0] * num_classes
 
         for line in lines:
             img, webtarget = line.split()
@@ -268,12 +294,12 @@ class WebvisionMemoryDataset(Dataset):
                 # webvision is always memory
                 synset = webtarget2synset[webtarget]
                 target = idxs_cls[synset]
-                # if num_samples_count[target] == 0:
+                # if nsamples_count[target] == 0:
                 #     print(webtarget, '->', synset, '->', target)
-                if num_samples_count[target] >= len_memory: continue
+                if nsamples_count[target] >= len_memory: continue
                 self.img_path.append(os.path.join(root, img))
                 self.targets.append(target)
-                num_samples_count[target] += 1
+                nsamples_count[target] += 1
 
         with open(os.path.join(root, 'info/synsets.txt')) as f:
             lines = f.readlines()
@@ -299,12 +325,12 @@ class WebvisionMemoryDataset(Dataset):
 
 
 class ImageNet1K(Dataset):
-    def __init__(self, datadir, transform, label_file, synset2txtlabel, split='train', **kwargs):
+    def __init__(self, datadir, label_file, synset2txtlabel, split='train', imgsize=224):
         super().__init__()
         self.datadir = datadir
         self.label_file = label_file
         self.img_datadir = os.path.join(datadir, 'ILSVRC/Data/CLS-LOC', split)
-        self.transform = transform
+        self.transform = Transforms.clip_transform(imgsize)
         self.synset2txtlabel = synset2txtlabel
         self.txtlabels = {}
 
