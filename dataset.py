@@ -96,7 +96,7 @@ class TextTokenMemoryDataset(Dataset):
 
 """
 DisjointClassDataset
-    * split_dirs : str
+    * splitdirs : str
         split idenfied by dirs e.g. 'train', 'val', 'test'
     * label_file : str
         label file of dataset
@@ -107,11 +107,11 @@ DisjointClassDataset
         The indecies that dataset actually consist of. It look like ['n01440764', 'n01484850', ....]
 """
 class DisjointClassDataset(Dataset):
-    def __init__(self, root, split_dir='train', label_file='trn_label.json', nsamples=None, is_shot=False, nshot=16, imgsize=224):
+    def __init__(self, root, splitdir='train', label_file='trn_label.json', nsamples=None, is_shot=False, nshot=16, imgsize=224):
         self.transform = Transforms.clip_transform(imgsize)
 
         # directory-identified classes
-        classdirnames = sorted(os.listdir(os.path.join(root, split_dir)))
+        classdirnames = sorted(os.listdir(os.path.join(root, splitdir)))
         classid2target = self._label_generator(root, label_file)
         self.classids = sorted(classdirnames, key = lambda item: classid2target[item])  # sort idxs with 0 ~ (# of classes - 1) order
 
@@ -119,7 +119,7 @@ class DisjointClassDataset(Dataset):
         self.targets = []
 
         for classid in self.classids:
-            imgpaths_c = sorted(os.listdir(os.path.join(root, split_dir, classid)))
+            imgpaths_c = sorted(os.listdir(os.path.join(root, splitdir, classid)))
 
             # query: [0 ~ (-nshot - 1 or nsamples)],
             # shot: [nshot ~ to the last elem]
@@ -133,7 +133,7 @@ class DisjointClassDataset(Dataset):
                 imgpaths_c = imgpaths_c[:nsamples_c]
 
             for imgpath in imgpaths_c:
-                imgabspath = os.path.join(root, split_dir, classid, imgpath)
+                imgabspath = os.path.join(root, splitdir, classid, imgpath)
                 target = classid2target[classid]
                 self.img_path.append(imgabspath)
                 self.targets.append(target)
@@ -249,7 +249,7 @@ class FoodMemoryDataset(CUBMemoryDataset):
             key2 = key1
             new_mapper[key2] = target
 
-            # get txtlabels
+            # get txtlaquerobels
             key = ' '.join(key2.split('_'))
             txtlabels.append([target, key])
         ordered_txtlabels = ['' for _ in range(len(txtlabels))]
@@ -260,26 +260,27 @@ class FoodMemoryDataset(CUBMemoryDataset):
 
 
 class WebvisionMemoryDataset(Dataset):
-    def __init__(self, root='webvision', label_file = '', synset2txtlabel={}, len_memory=1000, webvisionsource='google', imgsize=224):
+    def __init__(self, imgmemroot, queryroot, label_file = '', len_memory=1000, webvisionsource='google', imgsize=224):
         self.transform = Transforms.clip_transform(imgsize)
+        self.queryroot = queryroot
 
         # n0xxxxxxx -> 'web' 0 ~ 999
         synset2webtarget = {}
         webtarget2synset = {}
-        with open(os.path.join(root, 'info/synsets.txt')) as f:
+        with open(os.path.join(imgmemroot, 'info/synsets.txt')) as f:
             lines = f.readlines()
         for linenum, line in enumerate(lines):
             nxxxxxxxx = line.split()[0]
             synset2webtarget[nxxxxxxxx] = linenum
             webtarget2synset[linenum] = nxxxxxxxx
 
-        with open(label_file) as f:
+        with open(os.path.join(queryroot, label_file)) as f:
             idxs_cls = json.load(f)
         synset_set = idxs_cls.keys()  # [nxxxxxxxx, ..., nxxxxxxxx]
         num_classes = len(synset_set)
 
         # webvisionsource = {'google'/ 'flickr'}
-        with open(os.path.join(root, f'info/train_filelist_{webvisionsource}.txt')) as f:
+        with open(os.path.join(imgmemroot, f'info/train_filelist_{webvisionsource}.txt')) as f:
             lines = f.readlines()
 
         self.img_path = []
@@ -297,21 +298,31 @@ class WebvisionMemoryDataset(Dataset):
                 # if nsamples_count[target] == 0:
                 #     print(webtarget, '->', synset, '->', target)
                 if nsamples_count[target] >= len_memory: continue
-                self.img_path.append(os.path.join(root, img))
+                self.img_path.append(os.path.join(imgmemroot, img))
                 self.targets.append(target)
                 nsamples_count[target] += 1
 
-        with open(os.path.join(root, 'info/synsets.txt')) as f:
+        with open(os.path.join(imgmemroot, 'info/synsets.txt')) as f:
             lines = f.readlines()
 
         self.txtlabels = {}
 
+        synset2txtlabel = self.imagenetsynset2txtlabel()
         for linenum, line in enumerate(lines):
             nxxxxxxxx = line.split()[0]
             if nxxxxxxxx in synset_set:
                 target = idxs_cls[nxxxxxxxx]
                 clstxtlabel = synset2txtlabel[nxxxxxxxx]  # clipstyle txtlabel
                 self.txtlabels[target] = clstxtlabel
+
+    def imagenetsynset2txtlabel(self):
+        synset2txtlabel = {}
+        with open(os.path.join(self.queryroot, 'cliplabels.txt'), 'r') as f:
+            lines = list(f.read().splitlines())
+            for line in lines:
+                synset, target, txtlabel = line.split(',')
+                synset2txtlabel[synset] = txtlabel
+        return synset2txtlabel
 
     def __getitem__(self, index):
         img_path = self.img_path[index]
@@ -325,16 +336,17 @@ class WebvisionMemoryDataset(Dataset):
 
 
 class ImageNet1K(Dataset):
-    def __init__(self, datadir, label_file, synset2txtlabel, split='train', imgsize=224):
+    def __init__(self, datasetsroot, label_file, split='train', imgsize=224):
         super().__init__()
-        self.datadir = datadir
         self.label_file = label_file
-        self.img_datadir = os.path.join(datadir, 'ILSVRC/Data/CLS-LOC', split)
+        self.datasetsroot = datasetsroot
+        self.datasetroot = os.path.join(datasetsroot, 'ILSVRC/Data/CLS-LOC')
+        self.imgclassesdir = os.path.join(self.datasetroot, split)
         self.transform = Transforms.clip_transform(imgsize)
-        self.synset2txtlabel = synset2txtlabel
         self.txtlabels = {}
+        self.synset2txtlabel = self.imagenetsynset2txtlabel()
 
-        with open(os.path.join(self.datadir, self.label_file), 'r') as f:
+        with open(os.path.join(self.datasetsroot, self.label_file), 'r') as f:
             self.synset2target = json.load(f)
 
         if split == 'train':
@@ -343,7 +355,7 @@ class ImageNet1K(Dataset):
             self._init_valsplit()
 
     def _init_trainsplit(self):
-        synsets = os.listdir(self.img_datadir)
+        synsets = os.listdir(self.imgclassesdir)
         synsets.sort()
 
         self.img_path = []
@@ -355,7 +367,7 @@ class ImageNet1K(Dataset):
             target = self.synset2target[synset]
             self.txtlabels[target] = self.synset2txtlabel[synset]
 
-            synset_dir = os.path.join(self.img_datadir, synset)
+            synset_dir = os.path.join(self.imgclassesdir, synset)
             imgpath_c = sorted(os.listdir(synset_dir))
             imgpath_c = [os.path.join(synset_dir, img) for img in imgpath_c]
 
@@ -364,14 +376,23 @@ class ImageNet1K(Dataset):
                 self.targets.append(target)
 
     def _init_valsplit(self):
-        self.img_path = [os.path.join(self.img_datadir, img) for img in os.listdir(self.img_datadir)]
+        self.img_path = [os.path.join(self.imgclassesdir, img) for img in os.listdir(self.imgclassesdir)]
         self.img_path.sort()
-        with open(os.path.join(self.datadir, 'ILSVRC/Annotations/CLS-LOC/val/imagenet_2012_validation_synset_labels.txt'), 'r') as f:
+        with open(os.path.join(self.datasetsroot, 'ILSVRC/Annotations/CLS-LOC/val/imagenet_2012_validation_synset_labels.txt'), 'r') as f:
             synsets = list(f.read().splitlines())
         self.targets = [self.synset2target[t] for t in synsets]
         for synset in synsets:
             target = self.synset2target[synset]
             self.txtlabels[target] = self.synset2txtlabel[synset]
+
+    def imagenetsynset2txtlabel(self):
+        synset2txtlabel = {}
+        with open(os.path.join(self.datasetroot, 'cliplabels.txt'), 'r') as f:
+            lines = list(f.read().splitlines())
+            for line in lines:
+                synset, target, txtlabel = line.split(',')
+                synset2txtlabel[synset] = txtlabel
+        return synset2txtlabel
 
     def __len__(self):
         return len(self.targets)
