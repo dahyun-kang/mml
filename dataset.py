@@ -112,7 +112,7 @@ class DisjointClassDataset(Dataset):
 
         # directory-identified classes
         classdirnames = sorted(os.listdir(os.path.join(root, splitdir)))
-        classid2target = self._label_generator(root, label_file)
+        classid2target = self._label_generator(root, label_file, classdirnames)
         self.classids = sorted(classdirnames, key = lambda item: classid2target[item])  # sort idxs with 0 ~ (# of classes - 1) order
 
         self.img_path = []
@@ -157,7 +157,7 @@ class DisjointClassDataset(Dataset):
 
         return sample, label
 
-    def _label_generator(self, root, txt):
+    def _label_generator(self, root, txt, classdirnames):
         if txt != '' and os.path.exists(os.path.join(root, txt)):
             print(f'Label file exist : {os.path.join(root, txt)}')
             with open(os.path.join(root, txt), 'r') as jsonfile:
@@ -165,12 +165,8 @@ class DisjointClassDataset(Dataset):
         else:
             txt = 'label.json' if txt == '' else txt
             print(f"No label file found, make new one on {os.path.join(root, txt)}")
-            flatten_idxs = []
-            for s in self.classids: flatten_idxs += s
 
-            idx_classes = {}
-            for i, idx in enumerate(flatten_idxs):
-                idx_classes[idx] = i
+            idx_classes = {idx: i for i, idx in enumerate(classdirnames)}
             with open(os.path.join(root, txt), 'w') as jsonfile:
                 json.dump(idx_classes, jsonfile, indent='')
 

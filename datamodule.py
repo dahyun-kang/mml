@@ -27,17 +27,17 @@ class DisjointClassDataModule(LightningDataModule):
         super().__init__()
         self.__dict__.update(kwargs)
         self.dataset = DisjointClassDataset
-
-    def setup(self, stage: str):
-        # if episodiceval: return self.setup_episodic_eval()
-        queryroot = os.path.join(self.datasetsroot, self.datasetdir)
+        self.root = os.path.join(self.datasetsroot, self.datasetdir)
 
         self.query = {}
         self.imgmem = {}
         self.txtmem = {}
         self.shot = {}
 
-        self.query['trn'] = self.dataset(queryroot, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=None, is_shot=False, nshot=0)
+    def setup(self, stage: str):
+        # if episodiceval: return self.setup_episodic_eval()
+
+        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=None, is_shot=False, nshot=0)
         '''
         datalen = len(self.dataset_train.targets)
         numclass = max(self.dataset_train.targets) + 1
@@ -48,28 +48,28 @@ class DisjointClassDataModule(LightningDataModule):
         self.dataset_train.targets = targets.tolist()
         '''
 
-        self.query['val'] = self.dataset(queryroot, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
-        self.query['tst'] = self.dataset(queryroot, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
+        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
+        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
 
         self.shot['trn'] = self.query['trn']
-        self.shot['val'] = self.dataset(queryroot, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
-        self.shot['tst'] = self.dataset(queryroot, splitdir=self.testsplit, label_file='tst_label.json', nsamples=None, is_shot=True, nshot=self.nshot) # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
+        self.shot['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
+        self.shot['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=None, is_shot=True, nshot=self.nshot) # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
 
         # self.query['trn'] = self.shot['tst']  # linear on test, RAC
         # self.query['val'] = self.query['tst']  # linear on test, RAC
 
         imgmemroot = os.path.join(self.datasetsroot, 'webvisionv1')
-        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=queryroot, label_file='trn_label.json')
-        self.imgmem['val'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=queryroot, label_file='val_label.json')
-        self.imgmem['tst'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=queryroot, label_file='tst_label.json')
+        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='trn_label.json')
+        self.imgmem['val'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='val_label.json')
+        self.imgmem['tst'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='tst_label.json')
 
         # self.imgmem['trn'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/trn_label.json', split='train')
         # self.imgmem['val'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/val_label.json', split='train')
         # self.imgmem['tst'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/tst_label.json', split='train')
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(queryroot, classids=self.query['trn'].classids)
-        self.txtmem['val'] = TextTokenMemoryDataset(queryroot, classids=self.query['val'].classids)
-        self.txtmem['tst'] = TextTokenMemoryDataset(queryroot, classids=self.query['tst'].classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=self.query['trn'].classids)
+        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=self.query['val'].classids)
+        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=self.query['tst'].classids)
 
         assert len(set(self.query['val'].img_path).intersection(set(self.shot['val'].img_path))) == 0
         assert len(set(self.query['tst'].img_path).intersection(set(self.shot['tst'].img_path))) == 0
@@ -134,11 +134,6 @@ class DisjointClassDataModule(LightningDataModule):
             mem_img_path += mem_img_path_c
             mem_targets += [i] * len(mem_img_path_c)
 
-        self.query = {}
-        self.shot = {}
-        self.imgmem = {}
-        self.txtmem = {}
-
         self.query['tst'] = SubsetDataset(data=query_img_path, targets=query_targets)
         self.shot['tst'] = SubsetDataset(data=shot_img_path, targets=shot_targets)
         self.imgmem['tst'] = SubsetDataset(data=mem_img_path, targets=mem_targets)
@@ -149,16 +144,9 @@ class DisjointClassDataModule(LightningDataModule):
         return self.query['trn'].num_classes
 
 
-class SameClassDataModule(DisjointClassDataModule):
+class ImageNet1KDataModule(DisjointClassDataModule):
     def setup(self, stage: str):
-        queryroot = os.path.join(self.datasetsroot, self.datasetdir)
-
-        self.query = {}
-        self.imgmem = {}
-        self.txtmem = {}
-        self.shot = {}
-
-        self.query['trn'] = self.dataset(queryroot, splitdir=self.trainsplit, label_file='standard_label.json', nsamples=None, is_shot=False, nshot=0)
+        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='standard_label.json', nsamples=None, is_shot=False, nshot=0)
         self.query['val'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/standard_label.json', split='val')
         self.query['tst'] = self.query['val']
 
@@ -168,112 +156,26 @@ class SameClassDataModule(DisjointClassDataModule):
 
         # self.imgmem['trn'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/standard_label.json', split='train')
         imgmemroot = os.path.join(self.datasetsroot, 'webvisionv1')
-        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=queryroot, label_file='standard_label.json')
+        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='standard_label.json')
         self.imgmem['val'] = self.imgmem['trn']
         self.imgmem['tst'] = self.imgmem['trn']
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(queryroot, classids=self.query['trn'].classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=self.query['trn'].classids)
         self.txtmem['val'] = self.txtmem['trn']
         self.txtmem['tst'] = self.txtmem['trn']
 
 
-class Food101DataModule_Standard(SameClassDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.datasetsroot = 'food-101'
-        self.nsamples = None  # val/test queries
-        self.nshot = None
-
-        self.trainsplit = 'Train'
-        self.valsplit = 'Val'
-        self.testsplit = 'Val'
+class SameClassFGDataModule(DisjointClassDataModule):
+    def __init__(self, imgmemdataset, **kwargs):
+        super().__init__(**kwargs)
+        self.imgmemdataset = imgmemdataset
 
     def setup(self, stage: str):
-        root = os.path.join(self.datasetsroot, self.datasetsroot)
+        root = os.path.join(self.datasetsroot, self.datasetdir)
 
-        self.query = {}
-        self.imgmem = {}
-        self.txtmem = {}
-        self.shot = {}
-
-        self.query['trn'] = self.dataset(root, splitdir=self.trainsplit, label_file='standard_label.json', nsamples=None, is_shot=False, nshot=0)
-        self.query['val'] = self.dataset(root, splitdir=self.valsplit, label_file='standard_label.json', nsamples=self.nsamples, is_shot=False, nshot=0)
-        self.query['tst'] = self.query['val']
-
-        self.shot['trn'] = None
-        self.shot['val'] = None
-        self.shot['tst'] = None
-
-        self.imgmem['trn'] = FoodMemoryDataset(root=root, memory_dir='memory', label_file='standard_label.json')
-        self.imgmem['val'] = self.imgmem['trn']
-        self.imgmem['tst'] = self.imgmem['trn']
-
-        self.txtmem['trn'] = TextTokenMemoryDataset(root, classids=self.query['trn'].classids)
-        self.txtmem['val'] = self.txtmem['trn']
-        self.txtmem['tst'] = self.txtmem['trn']
-
-
-class Cub2011DataModule(DisjointClassDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.nsamples = 60  # val/test queries # train: 41 ~ 60 images per class, val: 49 ~ 60 images per class
-        self.datasetsroot = 'CUB_200_2011'
-        self.nshot = 5
-        self.trainsplit = 'Train_class'
-        self.valsplit = 'Val_class'
-        self.testsplit = 'Val_class'
-
-    def setup(self, stage: str):
-        root = os.path.join(self.datasetsroot, self.datasetsroot)
-
-        self.query = {}
-        self.imgmem = {}
-        self.txtmem = {}
-        self.shot = {}
-
-        self.query['trn'] = self.dataset(root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=5, is_shot=False, nshot=0)
-        self.query['val'] = self.dataset(root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
-        self.query['tst'] = self.dataset(root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
-        self.shot['trn'] = self.query['trn']
-        self.shot['val'] = self.dataset(root, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)
-                                          # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
-        self.shot['tst'] = self.dataset(root, splitdir=self.testsplit, label_file='tst_label.json',
-                                          nsamples=None, is_shot=True, nshot=self.nshot)
-                                          # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
-
-        assert len(set(self.query['val'].img_path).intersection(set(self.shot['val'].img_path))) == 0
-        assert len(set(self.query['tst'].img_path).intersection(set(self.shot['tst'].img_path))) == 0
-
-        # Remove the code duplicates
-        self.imgmem['trn'] = CUBMemoryDataset(root=root, memory_dir='memory', label_file='trn_label.json')
-        self.imgmem['val'] = CUBMemoryDataset(root=root, memory_dir='memory', label_file='val_label.json')
-        self.imgmem['tst'] = CUBMemoryDataset(root=root, memory_dir='memory', label_file='tst_label.json')
-
-        self.txtmem['trn'] = TextTokenMemoryDataset(root, classids=self.query['trn'].classids)
-        self.txtmem['val'] = TextTokenMemoryDataset(root, classids=self.query['val'].classids)
-        self.txtmem['tst'] = TextTokenMemoryDataset(root, classids=self.query['tst'].classids)
-
-
-class Cub2011DataModule_Standard(SameClassDataModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.datasetsroot = 'CUB_200_2011'
-        self.nsamples = None  # val/test queries
-        self.nshot = None
-
-        self.trainsplit = 'Train'
-        self.valsplit = 'Val'
-        self.testsplit = 'Val'
-
-    def setup(self, stage: str):
-        root = os.path.join(self.datasetsroot, self.datasetsroot)
-
-        self.query = {}
-        self.imgmem = {}
-        self.txtmem = {}
-        self.shot = {}
-
+        # TODO: predefine datasets with different seeds.
+        # TODO: refactor after rebuttal as running it 3 times
+        # by now its nsamples=5 is fixed
         self.query['trn'] = self.dataset(root, splitdir=self.trainsplit, label_file='standard_label.json', nsamples=5, is_shot=False, nshot=0)
         self.query['val'] = self.dataset(root, splitdir=self.valsplit, label_file='standard_label.json', nsamples=self.nsamples, is_shot=False, nshot=0)
         self.query['tst'] = self.query['val']
@@ -282,7 +184,7 @@ class Cub2011DataModule_Standard(SameClassDataModule):
         self.shot['val'] = self.shot['trn']
         self.shot['tst'] = self.shot['trn']
 
-        self.imgmem['trn'] = CUBMemoryDataset(root=root, memory_dir='memory', label_file='standard_label.json')
+        self.imgmem['trn'] = self.imgmemdataset(root=root, memory_dir='memory', label_file='standard_label.json')
         self.imgmem['val'] = self.imgmem['trn']
         self.imgmem['tst'] = self.imgmem['trn']
 
@@ -291,8 +193,34 @@ class Cub2011DataModule_Standard(SameClassDataModule):
         self.txtmem['tst'] = self.txtmem['trn']
 
 
+class DisjointClassFGDataModule(DisjointClassDataModule):
+    def __init__(self, imgmemdataset, **kwargs):
+        super().__init__(**kwargs)
+        self.imgmemdataset = imgmemdataset
+
+    def setup(self, stage: str):
+        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=5, is_shot=False, nshot=0)
+        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
+        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
+
+        self.shot['trn'] = self.query['trn']
+        self.shot['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
+        self.shot['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
+
+        self.imgmem['trn'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='trn_label.json')
+        self.imgmem['val'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='val_label.json')
+        self.imgmem['tst'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='tst_label.json')
+
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=self.query['trn'].classids)
+        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=self.query['val'].classids)
+        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=self.query['tst'].classids)
+
+        assert len(set(self.query['val'].img_path).intersection(set(self.shot['val'].img_path))) == 0
+        assert len(set(self.query['tst'].img_path).intersection(set(self.shot['tst'].img_path))) == 0
+
+
 @dataclass
-class ImageNet1KDataModule(LightningDataModule):
+class ImageNet1KMemDataModule(LightningDataModule):
     datasetsroot: str
     imgsize: int
     batchsize: int
@@ -322,13 +250,17 @@ def return_datamodule(datapath, dataset, batchsize, shot):
         dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='val', nshot=shot)
     elif 'miniimagenet' in datasetkey:
         dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='val', nshot=shot, nsamples=595)
-    elif datasetkey == 'cub2011':
-        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
     elif 'imagenetseen' in datasetkey:
         dm = SameClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='test', nshot=shot)
-    elif datasetkey == 'cub2011standard' or datasetkey == 'food101standard' :
-        dm = SameClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
-    elif datasetkey == 'imagenet1K':
-        dm = ImageNet1KDataModule(datasetsroot=datapath, batchsize=batchsize)
+    elif datasetkey == 'cub200':
+        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train_150', valsplit='Val_50', testsplit='Val_50', nshot=shot)
+    elif datasetkey == 'cub200seen':
+        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
+    elif datasetkey == 'food101seen':
+        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
+    '''
+    elif datasetkey == 'food101':
+        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trainsplit='Train_class', valsplit='Val_class', testsplit='Val_class', nshot=shot)
+    '''
 
     return dm
