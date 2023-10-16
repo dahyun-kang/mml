@@ -12,8 +12,6 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from datamodule import return_datamodule
 from model.mmltrainer import MemoryModularLearnerTrainer
-from model.decoupled import Decoupled_learner
-from model.tau_normalize import tau_normalizer
 from callbacks import CustomCheckpoint
 
 import submitit
