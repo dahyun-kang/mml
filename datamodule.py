@@ -38,16 +38,7 @@ class DisjointClassDataModule(LightningDataModule):
         # if episodiceval: return self.setup_episodic_eval()
 
         self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=None, is_shot=False, nshot=0)
-        '''
-        datalen = len(self.dataset_train.targets)
-        numclass = max(self.dataset_train.targets) + 1
-        numnoise = int(datalen * 0.05)
-        noiseidx = torch.randperm(datalen)[:numnoise]
-        targets = torch.tensor(self.dataset_train.targets)
-        targets[noiseidx] = torch.randint(low=0, high=numclass, size=[numnoise])
-        self.dataset_train.targets = targets.tolist()
-        '''
-
+        # self.add_label_noise(self.query['trn'].targets, ratio=0.4)
         self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
         self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
 
@@ -138,6 +129,15 @@ class DisjointClassDataModule(LightningDataModule):
         self.shot['tst'] = SubsetDataset(data=shot_img_path, targets=shot_targets)
         self.imgmem['tst'] = SubsetDataset(data=mem_img_path, targets=mem_targets)
         self.txtmem['tst'] = TextTokenMemoryDataset(root, classids=self.query['tst'].classids)
+
+    def add_label_noise(self, targets, ratio=0.4):
+        datalen = len(targets)
+        numclass = max(targets) + 1
+        numnoise = int(datalen * ratio)
+        noiseidx = torch.randperm(datalen)[:numnoise]
+        targets_tensor = torch.tensor(targets)
+        targets_tensor[noiseidx] = torch.randint(low=0, high=numclass, size=[numnoise])
+        targets = targets_tensor.tolist()
 
     @property
     def num_classes(self) -> int:
