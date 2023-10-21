@@ -27,6 +27,7 @@ class MemoryModularLearner(nn.Module):
         self.cachedir = osp.join(os.getcwd(), 'cache', args.dataset, args.backbone)
         self.modeldtype = torch.float16 if 'clip' in args.backbone else torch.float32
 
+        # TODO: rename below self.attn['txt'], self.attn['img'] such that it could be modularized
         self.attn_txt = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.attn_img = ResidualAttentionBlock(d_model=self.dim, n_head=1, **factory_kwargs)
         self.loss_fn = nn.CrossEntropyLoss()
@@ -135,28 +136,28 @@ class MemoryModularLearner(nn.Module):
             self.img_proto[split], self.txt_proto[split] = img_proto, txt_proto
             print(f"\n{split} class prototype info: dim_of_samples = {self.img_proto[split].shape[0]}x{self.img_proto[split].shape[1]}")
 
-        if self.args.runfree == 'clipzeroshot':  # or RAC
-            self.cls_label = {split: None for split in splits}
-            self.cls_prmpt = {split: None for split in splits}  # CLIP-stype cls prompt
+    def _load_cls_label(self, splits):
+        self.cls_label = {split: None for split in splits}
+        self.cls_prmpt = {split: None for split in splits}  # CLIP-stype cls prompt
 
-            for split in splits:
-                txtlabels = []
-                for target in range(len(img_label.unique())):
-                    txtlabel = img_loader.dataset.txtlabels[target] # .split(', ')[0]
-                    # txtlabel = self.dm.txtlabels[target]
-                    txtlabels.append(txtlabel)
-                self.cls_label[split] = np.array(txtlabels)
+        for split in splits:
+            txtlabels = []
+            for target in range(len(self.img_label[split].unique())):
+                txtlabel = img_loader.dataset.txtlabels[target] # .split(', ')[0]
+                # txtlabel = self.dm.txtlabels[target]
+                txtlabels.append(txtlabel)
+            self.cls_label[split] = np.array(txtlabels)
 
-                txtlabelembed = []
-                for txtlabel in self.cls_label[split]:
-                    txtlabel = [template.format(txtlabel) for template in prompt_templates]
-                    txtlabeltokens = clip.tokenize(txtlabel).cuda()
-                    with torch.inference_mode():
-                        txtlabelproto = self.backbone.encode_text(txtlabeltokens)
-                        txtlabelproto = F.normalize(txtlabelproto, p=2, dim=-1)
-                        txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
-                    txtlabelembed.append(txtlabelproto)
-                self.cls_prmpt[split] = torch.stack(txtlabelembed, dim=0)
+            txtlabelembed = []
+            for txtlabel in self.cls_label[split]:
+                txtlabel = [template.format(txtlabel) for template in prompt_templates]
+                txtlabeltokens = clip.tokenize(txtlabel).cuda()
+                with torch.inference_mode():
+                    txtlabelproto = self.backbone.encode_text(txtlabeltokens)
+                    txtlabelproto = F.normalize(txtlabelproto, p=2, dim=-1)
+                    txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
+                txtlabelembed.append(txtlabelproto)
+            self.cls_prmpt[split] = torch.stack(txtlabelembed, dim=0)
             print(f"\n{split} class prompt loaded")
 
     def _load_episodic_test_memory_and_prototype(self):
@@ -275,8 +276,8 @@ class MemoryModularLearner(nn.Module):
 
         return sim
 
-    # CUDA_VISIBLE_DEVICES=5 python main.py --datapath /home/dahyun/datasets/ --backbone clipvitb --dataset imagenetseen16shots --logpath 0914_p23_16shot --runfree clipzeroshot --eval --nowandb
-    def forward_clipzeroshot(self, x, y, stage=None):
+    # CUDA_VISIBLE_DEVICES=5 python main.py --datapath /home/dahyun/datasets/ --backbone clipvitb --dataset imagenetseen16shots --logpath 0914_p23_16shot --runfree zsclip --eval --nowandb
+    def forward_zsclip(self, x, y, stage=None):
         with torch.no_grad():
             clipfeat = self.backbone.encode_image(x)
             clipfeat_ = F.normalize(clipfeat.to(x.device), dim=-1, p=2)
@@ -286,43 +287,38 @@ class MemoryModularLearner(nn.Module):
 
         return sim_clip
 
+    def retrieve_knn(self, x, mem, k):
+        x_ = F.normalize(x, p=2, dim=-1)
+        mem_ = F.normalize(mem, p=2, dim=-1)  # TODO: fix at the beginning
+        sim = torch.einsum('b d, n d -> b n', x_, mem_)
+        _, indices = sim.topk(k=k, dim=-1, largest=True, sorted=True)
+
+        # N, D [[B, K] -> B, K, D
+        knnemb = mem[indices]
+        return knnemb
+
     # def forward_0909_p21_addclipfeat_txtembedl2simlargest16shotproto(self, x, y, stage):
     def forward(self, x, y, stage):
-        def retrieve_knn(x, mem, k):
-            with torch.no_grad():
-                x_ = F.normalize(x, p=2, dim=-1)
-                mem_ = F.normalize(mem, p=2, dim=-1)  # TODO: fix at the beginning
-                sim = torch.einsum('b d, n d -> b n', x_, mem_)
-                _, indices = sim.topk(k=k, dim=-1, largest=True, sorted=True)
-
-                # N, D [[B, K] -> B, K, D
-                knnemb = mem[indices]
-                return knnemb
 
         with torch.no_grad():
             clipfeat = self.backbone.encode_image(x)
+            kv_txt = self.retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.tk)
+            kv_img = self.retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.ik)
 
-        kv_txt = retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.tk)
-        kv_img = retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.ik)
-
+        # TODO: remove duplicates
         out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1) + clipfeat
         out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1) + clipfeat
 
-        '''
-        out_txt = self.attn_txt(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
-        out_img = self.attn_img(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
-        '''
+        # out_txt = self.attn_txt(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
+        # out_img = self.attn_img(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
 
-        # clipfeat_ = F.normalize(clipfeat, dim=-1, p=2)
         out_txt_ = F.normalize(out_txt, dim=-1, p=2)
         out_img_ = F.normalize(out_img, dim=-1, p=2)
         proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
         proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
 
-        # sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_) * 8.  # 32 with probfusion
         sim_txt = torch.einsum('c d, b d -> b c', proto_txt_, out_txt_) * self.args.multemp
         sim_img = torch.einsum('c d, b d -> b c', proto_img_, out_img_) * self.args.multemp
-
         sim = sim_txt + sim_img
 
         return sim
