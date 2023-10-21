@@ -30,12 +30,16 @@ class MemoryModularLearnerTrainer(LightningModule):
     def on_fit_start(self):
         # torch.nn.init.trunc_normal_(self.learner.generic_tokens, mean=0.0, std=0.02)
         self.learner._load_memory_and_prototype(splits=['trn', 'val'])
+        if self.args.runfree == 'zsclip':  # or RAC
+            self.learner._load_cls_label(splits=['trn', 'val'])
 
     def on_test_start(self):
         if self.args.episodiceval:
             self.learner._load_episodic_test_memory_and_prototype()
         else:
             self.learner._load_memory_and_prototype(splits=['tst'])
+        if self.args.runfree == 'zsclip':  # or RAC
+            self.learner._load_cls_label(splits=['tst'])
 
     def record_metrics(self, count_correct_batch, count_all_batch, loss, stage):
         self.count_correct[stage] += count_correct_batch

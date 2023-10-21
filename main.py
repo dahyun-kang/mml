@@ -36,7 +36,7 @@ if __name__ == '__main__':
     parser.add_argument('--ntokens', type=int, default=0, help='Number of tokens')
     parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
-    parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto', 'clipzeroshot'], help="Run a model don't have any differentiable parameters")
+    parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto', 'zsclip'], help="Run a model don't have any differentiable parameters")
     parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
     parser.add_argument('--episodiceval', action='store_true', help='Flag for episodic evaluation')
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
@@ -57,8 +57,8 @@ if __name__ == '__main__':
             model.learner.forward = model.learner.forward_nakata22
         elif args.runfree == 'naiveproto':
             model.learner.forward = model.learner.forward_naive_protomatching
-        elif args.runfree == 'clipzeroshot':
-            model.learner.forward = model.learner.forward_clipzeroshot
+        elif args.runfree == 'zsclip':
+            model.learner.forward = model.learner.forward_zsclip
 
     trainer = Trainer(
         max_epochs=args.maxepochs,
