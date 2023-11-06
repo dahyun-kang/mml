@@ -251,7 +251,7 @@ def return_datamodule(datapath, dataset, batchsize, shot):
     elif 'miniimagenet' in datasetkey:
         dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='val', nshot=shot, nsamples=595)
     elif 'imagenetseen' in datasetkey:
-        dm = SameClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='test', nshot=shot)
+        dm = ImageNet1KDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='test', nshot=shot)
     elif datasetkey == 'cub200':
         dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train_150', valsplit='Val_50', testsplit='Val_50', nshot=shot)
     elif datasetkey == 'cub200seen':
