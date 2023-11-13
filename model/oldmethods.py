@@ -948,3 +948,101 @@
 
         sim = torch.einsum('c d, b d -> b c', proto_, out_) * self.args.multemp
         return sim
+
+        def retrieve_knn_img(x, mem, k, idx):
+            dataset = self.dm.imgmem_dataloader('tst').dataset
+            with torch.no_grad():
+                x_ = F.normalize(x, p=2, dim=-1)
+                mem_ = F.normalize(mem, p=2, dim=-1)  # TODO: fix at the beginning
+                sim = torch.einsum('b d, n d -> b n', x_, mem_)
+                _, indices = sim.topk(k=k, dim=-1, largest=True, sorted=True)
+
+                import matplotlib.pyplot as plt
+                from PIL import Image
+                plt.subplot(1, 4, 1).set_title(self.cls_label['tst'][y.item()]); plt.axis('off')
+                path = self.dm.test_dataloader().dataset.img_path[idx[0]]
+                print(path)
+                with open(path, 'rb') as f:
+                    img = Image.open(f).convert('RGB')
+                    plt.imshow(img)
+
+                y0 = self.img_label['tst'][indices[0][0]]
+                plt.subplot(1, 4, 2).set_title(self.cls_label['tst'][y0]); plt.axis('off')
+                path = dataset.img_path[indices[0][0]]
+                print(path)
+                with open(path, 'rb') as f:
+                    img = Image.open(f).convert('RGB')
+                    plt.imshow(img)
+
+                y1 = self.img_label['tst'][indices[0][1]]
+                plt.subplot(1, 4, 3).set_title(self.cls_label['tst'][y1]); plt.axis('off')
+                path = dataset.img_path[indices[0][1]]
+                print(path)
+                with open(path, 'rb') as f:
+                    img = Image.open(f).convert('RGB')
+                    plt.imshow(img)
+
+                y2 = self.img_label['tst'][indices[0][2]]
+                plt.subplot(1, 4, 4).set_title(self.cls_label['tst'][y2]); plt.axis('off')
+                path = dataset.img_path[indices[0][2]]
+                print(path)
+                with open(path, 'rb') as f:
+                    img = Image.open(f).convert('RGB')
+                    plt.imshow(img)
+
+                plt.setp(plt.gcf().get_axes(), xticks=[], yticks=[], frame_on=False)
+                import os
+                savepath =f'{os.path.join(os.getcwd(), "0926_vis", str(idx[0].item())) + "img"}.png'
+                print(savepath)
+                plt.savefig(savepath, bbox_inches='tight')
+                plt.cla() ; plt.clf() ; plt.close()
+
+                # N, D [[B, K] -> B, K, D
+                knnemb = mem[indices]
+                return knnemb
+
+        def retrieve_knn_txt(x, mem, k, idx):
+            with torch.no_grad():
+                x_ = F.normalize(x, p=2, dim=-1)
+                mem_ = F.normalize(mem, p=2, dim=-1)  # TODO: fix at the beginning
+                sim = torch.einsum('b d, n d -> b n', x_, mem_)
+                _, indices = sim.topk(k=k, dim=-1, largest=True, sorted=True)
+
+                import matplotlib.pyplot as plt
+                from PIL import Image
+                plt.subplot(1, 4, 1).set_title(self.cls_label['tst'][y.item()]); plt.axis('off')
+                path = self.dm.test_dataloader().dataset.img_path[idx[0]]
+                with open(path, 'rb') as f:
+                    img = Image.open(f).convert('RGB')
+                    plt.imshow(img)
+
+                y0 = self.txt_label['tst'][indices[0][0]]
+                plt.subplot(1, 4, 2).set_title(self.cls_label['tst'][y0]); plt.axis('off')
+                txt = self.dm.test_dataloader().dataset.text_list[indices[0][0]]
+                with open(path, 'rb') as f:
+                    plt.text(0, 0.2, txt)
+
+                y1 = self.txt_label['tst'][indices[0][1]]
+                plt.subplot(1, 4, 3).set_title(self.cls_label['tst'][y1]); plt.axis('off')
+                txt = self.dm.test_dataloader().dataset.text_list[indices[0][1]]
+                with open(path, 'rb') as f:
+                    plt.text(0, 0.4, txt)
+
+                y2 = self.txt_label['tst'][indices[0][2]]
+                plt.subplot(1, 4, 4).set_title(self.cls_label['tst'][y2]); plt.axis('off')
+                txt = self.dm.test_dataloader().dataset.text_list[indices[0][2]]
+                with open(path, 'rb') as f:
+                    img = Image.open(f).convert('RGB')
+                    plt.text(0, 0.6, txt)
+
+                plt.setp(plt.gcf().get_axes(), xticks=[], yticks=[], frame_on=False)
+                import os
+                savepath =f'{os.path.join(os.getcwd(), "0926_vis", str(i[0].item())) + "txt"}.png'
+                print(savepath)
+                plt.savefig(savepath, bbox_inches='tight')
+                plt.cla() ; plt.clf() ; plt.close()
+
+                # N, D [[B, K] -> B, K, D
+                knnemb = mem[indices]
+                return knnemb
+
