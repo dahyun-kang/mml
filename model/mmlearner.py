@@ -297,6 +297,35 @@ class MemoryModularLearner(nn.Module):
         knnemb = mem[indices]
         return knnemb
 
+    def forward_addknn(self, x, y, stage):
+
+        with torch.no_grad():
+            clipfeat = self.backbone.encode_image(x)
+            kv_txt = self.retrieve_knn(x=clipfeat, mem=self.txt_embed[stage], k=self.args.tk)
+            kv_img = self.retrieve_knn(x=clipfeat, mem=self.img_embed[stage], k=self.args.ik)
+
+        # TODO: remove duplicates
+        '''
+        out_txt = self.attn_txt(clipfeat.unsqueeze(1), kv_txt, kv_txt).squeeze(1) + clipfeat
+        out_img = self.attn_img(clipfeat.unsqueeze(1), kv_img, kv_img).squeeze(1) + clipfeat
+        '''
+        out_txt = kv_txt.mean(dim=1) + clipfeat
+        out_img = kv_img.mean(dim=1) + clipfeat
+
+        # out_txt = self.attn_txt(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
+        # out_img = self.attn_img(clipfeat.unsqueeze(1), clipfeat.unsqueeze(1), clipfeat.unsqueeze(1)).squeeze(1)
+
+        out_txt_ = F.normalize(out_txt, dim=-1, p=2)
+        out_img_ = F.normalize(out_img, dim=-1, p=2)
+        proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
+        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
+
+        sim_txt = torch.einsum('c d, b d -> b c', proto_txt_, out_txt_) * self.args.multemp
+        sim_img = torch.einsum('c d, b d -> b c', proto_img_, out_img_) * self.args.multemp
+        sim = sim_txt + sim_img
+
+        return sim
+
     # def forward_0909_p21_addclipfeat_txtembedl2simlargest16shotproto(self, x, y, stage):
     def forward(self, x, y, stage):
 
