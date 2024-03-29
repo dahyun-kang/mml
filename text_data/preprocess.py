@@ -21,7 +21,8 @@ class SentPreProcessor(object):
         with open(os.path.join(self.root, self.label_mapping_file), "r") as rf:
             data = rf.readlines()
         hash_table = {}
-        _lines = [l.split() for l in data]
+        # _lines = [l.split() for l in data]
+        _lines = [l.split(',') if ',' in l else l.split() for l in data]
         for l in _lines:
             if l[0].strip() in self.loaded_idxs:
                 hash_table[l[0].strip()] = [l[1].strip(), l[-1].strip().replace("_", " ")]
@@ -48,11 +49,11 @@ class SentPreProcessor(object):
                 val += line + '\n'
         ret_dict[key] = val.strip()
         return ret_dict
-    
+
     def _gen_naive_desc(self, name):
         texts = [template.format(name + ' ') for template in prompt_templates]
         return '\n'.join(texts)
-    
+
     def _get_text(self, wiki):
         # use all key part of each wiki text except those in drop_keys
         text = wiki["summary"] + "\n"

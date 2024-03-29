@@ -191,14 +191,8 @@ class CUBMemoryDataset(Dataset):
         new_mapper = copy.deepcopy(mapper)
 
         for key1 in mapper.keys():
-            # key2 add
             target = new_mapper[key1]
-            key2 = key1.split('.')[1]
-            new_mapper[key2] = target
-
-            # get txtlabels
-            key = ' '.join(key2.split('_'))
-            txtlabels.append([target, key])
+            txtlabels.append([target, key1])
         ordered_txtlabels = ['' for _ in range(len(txtlabels))]
         for target, key in txtlabels:
             ordered_txtlabels[target] = key
@@ -209,7 +203,7 @@ class CUBMemoryDataset(Dataset):
         all_files = []
 
         for folder in folder_dirs:
-            folder_key = '_'.join(folder.split())
+            folder_key = folder  # '_'.join(folder.split())
             if folder_key not in self.dir2target.keys():
                 continue
             folder_dir = os.path.join(self.memory_dir, folder)

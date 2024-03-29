@@ -258,6 +258,9 @@ def return_datamodule(datapath, dataset, batchsize, shot):
         dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
     elif datasetkey == 'food101seen':
         dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
+    elif datasetkey in ['caltech-101', 'oxford_pets', 'oxford_flowers', 'dtd', 'fgvc_aircraft', 'eurosat', 'sun397', 'ucf101', 'stanford_cars', 'food-101']:
+        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir=datasetkey, imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='test', nshot=shot)
+
     '''
     elif datasetkey == 'food101':
         dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trainsplit='Train_class', valsplit='Val_class', testsplit='Val_class', nshot=shot)
