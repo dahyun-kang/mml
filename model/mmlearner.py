@@ -38,12 +38,18 @@ class MemoryModularLearner(nn.Module):
         if self.args.backbone == 'clipvitb':
             model, preprocess = clip.load("ViT-B/32")
             self.dim = 512
+        elif self.args.backbone == 'clipvitb16':
+            model, preprocess = clip.load("ViT-B/16")
+            self.dim = 512
         elif self.args.backbone == 'clipvitl':
             model, preprocess = clip.load("ViT-L/14")
             self.dim = 768
         elif self.args.backbone == 'clipRN50':
             model, preprocess = clip.load("RN50")
-            self.dim = 512
+            self.dim = 1024
+        elif self.args.backbone == 'clipRN101':
+            model, preprocess = clip.load("RN101")
+            self.dim = 2048
 
         model.requires_grad_(requires_grad=False)
         # model.visual.requires_grad_(requires_grad=False)  # RAC
@@ -143,7 +149,8 @@ class MemoryModularLearner(nn.Module):
         for split in splits:
             txtlabels = []
             for target in range(len(self.img_label[split].unique())):
-                txtlabel = img_loader.dataset.txtlabels[target] # .split(', ')[0]
+                img_loader = self.dm.imgmem_dataloader(split)
+                txtlabel = img_loader.dataset.txtlabels[target][1]
                 # txtlabel = self.dm.txtlabels[target]
                 txtlabels.append(txtlabel)
             self.cls_label[split] = np.array(txtlabels)
@@ -250,6 +257,7 @@ class MemoryModularLearner(nn.Module):
         # assert self.args.eval, "This method can't be learned"  # TODO: add episodiceval
 
         memory = self.img_embed['tst'].to(x.device)
+        # memory = self.img_proto['tst'].to(x.device)
         labels = self.img_label['tst']
         num_cls = max(labels)+1
 
