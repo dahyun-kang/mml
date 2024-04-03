@@ -111,6 +111,8 @@ class MemoryModularLearner(nn.Module):
 
         img_proto = torch.stack(img_proto_list, dim=0)
         txt_proto = torch.stack(txt_proto_list, dim=0)
+        img_proto = F.normalize(img_proto, p=2, dim=-1)
+        txt_proto = F.normalize(txt_proto, p=2, dim=-1)
         return img_proto, txt_proto
 
     def _load_memory_and_prototype(self, splits=['trn', 'val']):
@@ -165,6 +167,7 @@ class MemoryModularLearner(nn.Module):
                     txtlabelproto = txtlabelproto.mean(dim=0, keepdim=False)
                 txtlabelembed.append(txtlabelproto)
             self.cls_prmpt[split] = torch.stack(txtlabelembed, dim=0)
+            self.cls_prmpt[split] = F.normalize(self.cls_prmpt[split], p=2, dim=-1)
             print(f"\n{split} class prompt loaded")
 
     def _load_episodic_test_memory_and_prototype(self):
@@ -184,6 +187,7 @@ class MemoryModularLearner(nn.Module):
 
         img_label_idx = img_label.unique().sort()[0]
         img_proto = [img_embed[img_label == c].mean(dim=0) for c in img_label_idx]
+        img_proto = F.normalize(img_proto, p=2, dim=-1)
         self.img_proto[split] = torch.stack(img_proto, dim=0)  # C, D
 
         if not hasattr(self, 'txt_embed_tst_all'):
@@ -206,6 +210,7 @@ class MemoryModularLearner(nn.Module):
 
         txt_label_idx = self.txt_label[split].unique().sort()[0]
         txt_proto = [self.txt_embed[split][self.txt_label[split] == c].mean(dim=0) for c in txt_label_idx]
+        txt_proto = F.normalize(txt_proto, p=2, dim=-1)
         self.txt_proto[split] = torch.stack(txt_proto, dim=0)  # C, D
 
     def _init_memory(self, loader, split, modality):
@@ -240,11 +245,10 @@ class MemoryModularLearner(nn.Module):
 
         assert self.args.eval, "This method can't be learned"
 
-        proto = self.img_proto['tst'].to(x.device)
+        proto_ = self.img_proto['tst'].to(x.device)
 
         # l2_norm
         out_ = F.normalize(out, dim=-1, p=2)
-        proto_ = F.normalize(proto, dim=-1, p=2)
 
         sim = torch.einsum('c d, b d -> b c', proto_, out_) # * 0.001
         return sim
@@ -289,7 +293,7 @@ class MemoryModularLearner(nn.Module):
         with torch.no_grad():
             clipfeat = self.backbone.encode_image(x)
             clipfeat_ = F.normalize(clipfeat.to(x.device), dim=-1, p=2)
-            proto_txt_ = F.normalize(self.cls_prmpt[stage].to(x.device), dim=-1, p=2)
+            proto_txt_ = self.cls_prmpt[stage].to(x.device)
 
             sim_clip = torch.einsum('c d, b d -> b c', proto_txt_, clipfeat_)
 
@@ -325,8 +329,8 @@ class MemoryModularLearner(nn.Module):
 
         out_txt_ = F.normalize(out_txt, dim=-1, p=2)
         out_img_ = F.normalize(out_img, dim=-1, p=2)
-        proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
-        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
+        proto_txt_ = self.txt_proto[stage].to(x.device)
+        proto_img_ = self.img_proto[stage].to(x.device)
 
         sim_txt = torch.einsum('c d, b d -> b c', proto_txt_, out_txt_) * self.args.multemp
         sim_img = torch.einsum('c d, b d -> b c', proto_img_, out_img_) * self.args.multemp
@@ -351,8 +355,8 @@ class MemoryModularLearner(nn.Module):
 
         out_txt_ = F.normalize(out_txt, dim=-1, p=2)
         out_img_ = F.normalize(out_img, dim=-1, p=2)
-        proto_txt_ = F.normalize(self.txt_proto[stage].to(x.device), dim=-1, p=2)
-        proto_img_ = F.normalize(self.img_proto[stage].to(x.device), dim=-1, p=2)
+        proto_txt_ = self.txt_proto[stage].to(x.device)
+        proto_img_ = self.img_proto[stage].to(x.device)
 
         sim_txt = torch.einsum('c d, b d -> b c', proto_txt_, out_txt_) * self.args.multemp
         sim_img = torch.einsum('c d, b d -> b c', proto_img_, out_img_) * self.args.multemp
