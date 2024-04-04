@@ -3,6 +3,7 @@ import json
 import copy
 from PIL import Image
 
+import numpy as np
 import torch
 import torchvision
 from torch.utils.data import Dataset
@@ -120,6 +121,9 @@ class DisjointClassDataset(Dataset):
 
         for classid in self.classids:
             imgpaths_c = sorted(os.listdir(os.path.join(root, splitdir, classid)))
+            # randominze img indice. seed fixed at main.py
+            rand_idx = torch.randperm(len(imgpaths_c)).tolist()
+            imgpaths_c = np.array(imgpaths_c)[rand_idx].tolist()
 
             # query: [0 ~ (-nshot - 1 or nsamples)],
             # shot: [nshot ~ to the last elem]
@@ -226,27 +230,6 @@ class CUBMemoryDataset(Dataset):
         if not (self.transform == None):
             img = self.transform(img)
         return img, target
-
-
-class FoodMemoryDataset(CUBMemoryDataset):
-     def mapper_refiner(self, mapper):
-        txtlabels = []
-        new_mapper = copy.deepcopy(mapper)
-
-        for key1 in mapper.keys():
-            # key2 add
-            target = new_mapper[key1]
-            key2 = key1
-            new_mapper[key2] = target
-
-            # get txtlaquerobels
-            key = ' '.join(key2.split('_'))
-            txtlabels.append([target, key])
-        ordered_txtlabels = ['' for _ in range(len(txtlabels))]
-        for target, key in txtlabels:
-            ordered_txtlabels[target] = key
-
-        return new_mapper, txtlabels
 
 
 class WebvisionMemoryDataset(Dataset):

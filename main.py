@@ -26,7 +26,8 @@ if __name__ == '__main__':
     parser.add_argument('--logpath', type=str, default='', help='Checkpoint saving dir identifier')
     parser.add_argument('--evalmodelpath', type=str, default=None, help='Force to load a checkpoint')
     parser.add_argument('--batchsize', type=int, default=256, help='Batch size')
-    parser.add_argument('--shot', type=int, default=16, help='M shots')
+    parser.add_argument('--ntrainsamples', type=int, default=16, help='Number of per-class train samples')
+    parser.add_argument('--shot', type=int, default=16, help='Number of per-class labeled samples for val/test set')
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
     parser.add_argument('--wd', type=float, default=1e-2, help='Weight decay')
     parser.add_argument('--multemp', type=float, default=16., help='Multiplying temperature')
@@ -46,7 +47,7 @@ if __name__ == '__main__':
     seed_everything(args.seed)
 
     checkpoint_callback = CustomCheckpoint(args)
-    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.shot)
+    dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.ntrainsamples, args.shot)
     model = MemoryModularLearnerTrainer(args, dm=dm)
 
     if args.runfree:

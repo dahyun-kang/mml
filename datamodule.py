@@ -2,26 +2,24 @@ import os
 import numpy as np
 
 import torch
-import torchvision
 from torch.utils.data import DataLoader
 from pytorch_lightning.core.datamodule import LightningDataModule
 
 from dataclasses import dataclass
-from dataset import DisjointClassDataset, TextTokenMemoryDataset, WebvisionMemoryDataset, CUBMemoryDataset, FoodMemoryDataset, ImageNet1K, SubsetDataset
+from dataset import DisjointClassDataset, TextTokenMemoryDataset, WebvisionMemoryDataset, CUBMemoryDataset, ImageNet1K
 
 
 @dataclass
 class DisjointClassDataModule(LightningDataModule):
-    datasetsroot: str = '/ssd1t/datasets/'
-    datasetdir: str = 'imagenetunseen16shots_seed7'
+    datasetsroot: str = '/ssd2t/datasets/'
+    datasetdir: str = 'imagenetunseen'
     imgsize: int = 224
     batchsize: int = 256
     nworkers: int = 8
     trainsplit: str = 'train'
     valsplit: str = 'val'
     testsplit: str = 'test'
-    nsamples: int = 200
-    nshot: int = 16
+    nvalsamples: int = 200
 
     def __init__(self, **kwargs):
         super().__init__()
@@ -37,10 +35,10 @@ class DisjointClassDataModule(LightningDataModule):
     def setup(self, stage: str):
         # if episodiceval: return self.setup_episodic_eval()
 
-        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=None, is_shot=False, nshot=0)
+        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=self.ntrainsamples, is_shot=False, nshot=0)
         # self.add_label_noise(self.query['trn'].targets, ratio=0.4)
-        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
-        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
+        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
+        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
 
         self.shot['trn'] = self.query['trn']
         self.shot['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
@@ -179,7 +177,7 @@ class SameClassFGDataModule(DisjointClassDataModule):
         # TODO: refactor after rebuttal as running it 3 times
         # by now its nsamples=5 is fixed
         self.query['trn'] = self.dataset(root, splitdir=self.trainsplit, label_file='standard_label.json', nsamples=5, is_shot=False, nshot=0)
-        self.query['val'] = self.dataset(root, splitdir=self.valsplit, label_file='standard_label.json', nsamples=self.nsamples, is_shot=False, nshot=0)
+        self.query['val'] = self.dataset(root, splitdir=self.valsplit, label_file='standard_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=0)
         self.query['tst'] = self.query['val']
 
         self.shot['trn'] = self.query['trn']
@@ -202,8 +200,8 @@ class DisjointClassFGDataModule(DisjointClassDataModule):
 
     def setup(self, stage: str):
         self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=5, is_shot=False, nshot=0)
-        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
-        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nsamples, is_shot=False, nshot=self.nshot)
+        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
+        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
 
         self.shot['trn'] = self.query['trn']
         self.shot['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
@@ -244,26 +242,24 @@ class ImageNet1KMemDataModule(LightningDataModule):
         return loader
 
 
-def return_datamodule(datapath, dataset, batchsize, shot):
-    datasetkey = dataset if 'seed' not in dataset else dataset.split('_seed')[0]
-    if 'imagenetunseen' in datasetkey:
-        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='test', nshot=shot)
-    elif 'imagenethalf' in datasetkey:
+def return_datamodule(datapath, dataset, batchsize, ntrainsamples, shot):
+    if 'imagenetunseen' in dataset:
+        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, nsamples=ntrainsamples, nshot=shot)
+    elif 'imagenetseen' in dataset:
+        dm = ImageNet1KDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, nsamples=ntrainsamples, nshot=shot)
+    elif dataset == 'cub200':
+        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train_150', valsplit='Val_50', testsplit='Val_50', nsamples=ntrainsamples, nshot=shot)
+    elif dataset in ['caltech-101', 'oxford_pets', 'oxford_flowers', 'dtd', 'fgvc_aircraft', 'eurosat', 'sun397', 'ucf101', 'stanford_cars', 'food-101']:
+        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir=dataset, imgmemdataset=CUBMemoryDataset, batchsize=batchsize, nsamples=ntrainsamples, nshot=shot)
+    else:
+        raise NotImplementedError
+    '''
+    elif 'imagenethalf' in dataset:
         dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='val', nshot=shot)
     elif 'miniimagenet' in datasetkey:
         dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='val', nshot=shot, nsamples=595)
-    elif 'imagenetseen' in datasetkey:
-        dm = ImageNet1KDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='test', nshot=shot)
-    elif datasetkey == 'cub200':
-        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train_150', valsplit='Val_50', testsplit='Val_50', nshot=shot)
     elif datasetkey == 'cub200seen':
         dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
-    elif datasetkey == 'food101seen':
-        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
-    elif datasetkey in ['caltech-101', 'oxford_pets', 'oxford_flowers', 'dtd', 'fgvc_aircraft', 'eurosat', 'sun397', 'ucf101', 'stanford_cars', 'food-101']:
-        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir=datasetkey, imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='test', nshot=shot)
-
-    '''
     elif datasetkey == 'food101':
         dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trainsplit='Train_class', valsplit='Val_class', testsplit='Val_class', nshot=shot)
     '''
