@@ -19,7 +19,6 @@ from submitit.helpers import RsyncSnapshot
 
 
 if __name__ == '__main__':
-    seed_everything(7)
 
     parser = argparse.ArgumentParser(description='Query-Adaptive Memory Referencing Classification')
     parser.add_argument('--datapath', type=str, default='/ssd1t/datasets', help='Dataset root path')
@@ -32,8 +31,9 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=5e-3, help='Learning rate')
     parser.add_argument('--wd', type=float, default=1e-2, help='Weight decay')
     parser.add_argument('--multemp', type=float, default=16., help='Multiplying temperature')
-    parser.add_argument('--ik', type=int, default=16, help='K KNN')
-    parser.add_argument('--tk', type=int, default=16, help='K KNN')
+    parser.add_argument('--ik', type=int, default=16, help='Image K KNN')
+    parser.add_argument('--tk', type=int, default=16, help='Text K KNN')
+    parser.add_argument('--seed', type=int, default=7, help='Random seed')
     parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto', 'zsclip', 'addknn'], help="Run a model don't have any differentiable parameters")
@@ -42,11 +42,9 @@ if __name__ == '__main__':
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
     parser.add_argument('--usefewshot', action='store_true', help='use few-shot images')
     parser.add_argument('--jobid', type=int, default=0, help='Slurm job ID')
-
     args = parser.parse_args()
 
-    if args.dataset == 'places365':
-        args.datapath = os.path.join(args.datapath, 'places365')
+    seed_everything(args.seed)
 
     checkpoint_callback = CustomCheckpoint(args)
     dm = return_datamodule(args.datapath, args.dataset, args.batchsize, args.shot)
