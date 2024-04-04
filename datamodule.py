@@ -83,6 +83,7 @@ class DisjointClassDataModule(LightningDataModule):
     def imgmem_dataloader(self, split):
         return DataLoader(self.imgmem[split], batch_size=self.batchsize, num_workers=self.nworkers)
 
+    '''
     def setup_episodic_eval(self, nclass=5, nshot=5, nquery=15):
         root = os.path.join(self.datasetsroot, self.datasetdir)
 
@@ -129,6 +130,7 @@ class DisjointClassDataModule(LightningDataModule):
         self.shot['tst'] = SubsetDataset(data=shot_img_path, targets=shot_targets)
         self.imgmem['tst'] = SubsetDataset(data=mem_img_path, targets=mem_targets)
         self.txtmem['tst'] = TextTokenMemoryDataset(root, classids=self.query['tst'].classids)
+    '''
 
     def add_label_noise(self, targets, ratio=0.4):
         datalen = len(targets)

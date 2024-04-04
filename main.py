@@ -3,7 +3,6 @@ import math
 import os
 import argparse
 import torch
-import numpy as np
 
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor
@@ -38,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--runfree', type=str, default=None, choices=['nakata22', 'naiveproto', 'zsclip', 'addknn'], help="Run a model don't have any differentiable parameters")
     parser.add_argument('--eval', action='store_true', help='Flag for evaluation')
-    parser.add_argument('--episodiceval', action='store_true', help='Flag for episodic evaluation')
+    # parser.add_argument('--episodiceval', action='store_true', help='Flag for episodic evaluation')
     parser.add_argument('--resume', action='store_true', help='Flag to resume training from the last point of logpath')
     parser.add_argument('--usefewshot', action='store_true', help='use few-shot images')
     parser.add_argument('--jobid', type=int, default=0, help='Slurm job ID')
@@ -71,6 +70,7 @@ if __name__ == '__main__':
         # gradient_clip_val=5.0,
     )
 
+    '''
     if args.episodiceval:
         modelpath = checkpoint_callback.modelpath
         model = MemoryModularLearnerTrainer.load_from_checkpoint(modelpath, args=args, dm=dm)
@@ -86,6 +86,7 @@ if __name__ == '__main__':
             ci = std_acc * 1.96 / math.sqrt(i + 1)  # 95% confidence interval
             print(f'{i + 1}/{nepisode} avg acc: {avg_acc} +- {ci}')
         exit()
+    '''
 
     if args.eval:
         if not args.runfree:
