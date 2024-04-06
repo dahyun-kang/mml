@@ -34,10 +34,8 @@ class MemoryModularLearnerTrainer(LightningModule):
             self.learner._load_cls_label(splits=['trn', 'val'])
 
     def on_test_start(self):
-        if self.args.episodiceval:
-            self.learner._load_episodic_test_memory_and_prototype()
-        else:
-            self.learner._load_memory_and_prototype(splits=['tst'])
+        # self.learner._load_episodic_test_memory_and_prototype()
+        self.learner._load_memory_and_prototype(splits=['tst'])
         if self.args.runfree == 'zsclip':  # or RAC
             self.learner._load_cls_label(splits=['tst'])
 
