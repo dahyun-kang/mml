@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.core.datamodule import LightningDataModule
 
 from dataclasses import dataclass
-from dataset import DatasetSplitLoader, TextTokenMemoryDataset, WebvisionMemoryDataset, CUBMemoryDataset, ImageNet1K
+from dataset import DatasetSplitLoader, TextTokenMemoryDataset, WebvisionMemoryDataset, FGMemoryDataset, ImageNet1K
 
 
 @dataclass
@@ -223,28 +223,6 @@ class DisjointClassFGDataModule(DisjointClassDataModule):
             assert len(set(self.query['val'].data).intersection(set(self.shot['val'].data))) == 0
             assert len(set(self.query['tst'].data).intersection(set(self.shot['tst'].data))) == 0
 
-@dataclass
-class ImageNet1KMemDataModule(LightningDataModule):
-    datasetsroot: str
-    imgsize: int
-    batchsize: int
-    nworkers: int
-
-    def __init__(self, **kwargs):
-        super().__init__()
-        self.__dict__.update(kwargs)
-
-    def imgmem_dataloader(self, split):
-        assert split == 'tst'
-        dataset = ImageNet1K(datasetsroot=self.datasetsroot, split='train')
-        loader = DataLoader(dataset, batch_size=self.batchsize, num_workers=self.nworkers, shuffle=False, sampler=None)
-        return loader
-
-    def test_dataloader(self):
-        dataset = ImageNet1K(datasetsroot=self.datasetsroot, split='val')
-        loader = DataLoader(dataset, batch_size=self.batchsize, num_workers=self.nworkers, shuffle=False, sampler=None)
-        return loader
-
 
 def return_datamodule(datapath, dataset, batchsize, ntrainsamples, shot):
     if 'imagenetunseen' in dataset:
@@ -252,9 +230,9 @@ def return_datamodule(datapath, dataset, batchsize, ntrainsamples, shot):
     elif 'imagenetseen' in dataset:
         dm = ImageNet1KDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, ntrainsamples=ntrainsamples, nshot=shot)
     elif dataset == 'cub200':
-        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trnsplit='Train_150', valsplit='Val_50', tstsplit='Val_50', nsamples=ntrainsamples, nshot=shot)
+        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=FGMemoryDataset, batchsize=batchsize, trnsplit='Train_150', valsplit='Val_50', tstsplit='Val_50', nsamples=ntrainsamples, nshot=shot)
     elif dataset in ['caltech-101', 'oxford_pets', 'oxford_flowers', 'dtd', 'fgvc_aircraft', 'eurosat', 'sun397', 'ucf101', 'stanford_cars', 'food-101']:
-        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir=dataset, imgmemdataset=CUBMemoryDataset, batchsize=batchsize, ntrainsamples=ntrainsamples, nshot=shot)
+        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir=dataset, imgmemdataset=FGMemoryDataset, batchsize=batchsize, ntrainsamples=ntrainsamples, nshot=shot)
     else:
         raise NotImplementedError
     '''

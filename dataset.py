@@ -177,7 +177,7 @@ class DatasetSplitLoader:
         return idx_classes
 
 
-class CUBMemoryDataset(Dataset):
+class FGMemoryDataset(Dataset):
     def __init__(self, root, memory_dir='memory', label_file='standard_label.json', imgsize=224):
         self.transform = Transforms.clip_transform(imgsize)
         self.label_file = label_file
