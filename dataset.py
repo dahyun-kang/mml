@@ -233,7 +233,7 @@ class CUBMemoryDataset(Dataset):
 
 
 class WebvisionMemoryDataset(Dataset):
-    def __init__(self, imgmemroot, queryroot, label_file = '', len_memory=1000, webvisionsource='google', imgsize=224):
+    def __init__(self, imgmemroot, queryroot, label_file = '', len_memory=100, webvisionsource='google', imgsize=224):
         self.transform = Transforms.clip_transform(imgsize)
         self.queryroot = queryroot
 
