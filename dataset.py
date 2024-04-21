@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from text_data.preprocess import SentPreProcessor
 
 
-class Transforms:
+class Transforms:  # TODO: can we import it from clip?
     @staticmethod
     def clip_transform(n_px):
         '''
@@ -96,7 +96,7 @@ class TextTokenMemoryDataset(Dataset):
 
 
 """
-DisjointClassDataset
+DatasetSplitLoader
     * splitdirs : str
         split idenfied by dirs e.g. 'train', 'val', 'test'
     * label_file : str
@@ -107,59 +107,59 @@ DisjointClassDataset
     * classids : list
         The indecies that dataset actually consist of. It look like ['n01440764', 'n01484850', ....]
 """
-class DisjointClassDataset(Dataset):
-    def __init__(self, root, splitdir='train', label_file='trn_label.json', nsamples=None, is_shot=False, nshot=16, imgsize=224):
-        self.transform = Transforms.clip_transform(imgsize)
-
+class DatasetSplitLoader:
+    def __init__(self, root, splitdir='train', label_file='trn_label.json'):
         # directory-identified classes
         classdirnames = sorted(os.listdir(os.path.join(root, splitdir)))
-        classid2target = self._label_generator(root, label_file, classdirnames)
-        self.classids = sorted(classdirnames, key = lambda item: classid2target[item])  # sort idxs with 0 ~ (# of classes - 1) order
+        self.classid2target = self._label_generator(root, label_file, classdirnames)
+        self.classids = sorted(classdirnames, key = lambda item: self.classid2target[item])  # sort idxs with 0 ~ (# of classes - 1) order
 
-        self.img_path = []
-        self.targets = []
+        self.img_path = {}
+        self.classlen = {}
 
         for classid in self.classids:
             imgpaths_c = sorted(os.listdir(os.path.join(root, splitdir, classid)))
+            self.img_path[classid] = []
+            self.classlen[classid] = len(imgpaths_c)
             # randominze img indice. seed fixed at main.py
             rand_idx = torch.randperm(len(imgpaths_c)).tolist()
             imgpaths_c = np.array(imgpaths_c)[rand_idx].tolist()
 
-            # query: [0 ~ (-nshot - 1 or nsamples)],
-            # shot: [nshot ~ to the last elem]
-            if is_shot:
-                nsamples_c = nshot if nshot else len(imgpaths_c)
-                imgpaths_c = imgpaths_c[-nsamples_c:]
-                # imgpaths_c = imgdirs[200:]  # full
-            else:
-                nsamples_c = min(nsamples, len(imgpaths_c) - nshot) if nsamples else len(imgpaths_c) - nshot
-                # nsamples_c = nsamples if nsamples else len(imgpaths_c) - nshot  # full
-                imgpaths_c = imgpaths_c[:nsamples_c]
-
             for imgpath in imgpaths_c:
                 imgabspath = os.path.join(root, splitdir, classid, imgpath)
-                target = classid2target[classid]
-                self.img_path.append(imgabspath)
-                self.targets.append(target)
+                self.img_path[classid].append(imgabspath)
+   
+    def split(self, nsamples=None, nshot=16):
+        query_img_path = []
+        query_targets = []
+        shot_img_path = []
+        shot_targets = []
 
-        num_classes = len(self.classids)
-        assert num_classes == max(self.targets) + 1
+        for classid in self.classids:
+            len_c = self.classlen[classid]
+            target = self.classid2target[classid]
 
-    def __len__(self):
-        return len(self.targets)
+            query_nsamples_c = min(nsamples, len_c - nshot) if nsamples else len_c - nshot
+            # nsamples_c = nsamples if nsamples else len(imgpaths_c) - nshot  # full
+            query_imgpaths_c = self.img_path[classid][:query_nsamples_c]
+            query_img_path += query_imgpaths_c
+            query_targets += [target] * query_nsamples_c
 
-    def __getitem__(self, index):
+            if nshot > 0:
+                shot_nsamples_c = nshot if nshot else len_c
+                shot_imgpaths_c = self.img_path[classid][-shot_nsamples_c:]
+                # shot_imgpaths_c = shot_imgdirs[200:]  # full
+                shot_img_path += shot_imgpaths_c
+                shot_targets += [target] * shot_nsamples_c
 
-        path = self.img_path[index]
-        label = self.targets[index]
+        query_dataset = SubsetDataset(data=query_img_path, targets=query_targets)
 
-        with open(path, 'rb') as f:
-            sample = Image.open(f).convert('RGB')
+        if nshot > 0:
+            shot_dataset = SubsetDataset(data=shot_img_path, targets=shot_targets)
+        else:
+            shot_dataset = None
 
-        if self.transform is not None:
-            sample = self.transform(sample)
-
-        return sample, label
+        return query_dataset, shot_dataset
 
     def _label_generator(self, root, txt, classdirnames):
         if txt != '' and os.path.exists(os.path.join(root, txt)):

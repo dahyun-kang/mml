@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.core.datamodule import LightningDataModule
 
 from dataclasses import dataclass
-from dataset import DisjointClassDataset, TextTokenMemoryDataset, WebvisionMemoryDataset, CUBMemoryDataset, ImageNet1K
+from dataset import DatasetSplitLoader, TextTokenMemoryDataset, WebvisionMemoryDataset, CUBMemoryDataset, ImageNet1K
 
 
 @dataclass
@@ -16,15 +16,15 @@ class DisjointClassDataModule(LightningDataModule):
     imgsize: int = 224
     batchsize: int = 256
     nworkers: int = 8
-    trainsplit: str = 'train'
+    trnsplit: str = 'train'
     valsplit: str = 'val'
-    testsplit: str = 'test'
+    tstsplit: str = 'test'
+    ntrainsamples: int = 0  # args input
     nvalsamples: int = 200
 
     def __init__(self, **kwargs):
         super().__init__()
         self.__dict__.update(kwargs)
-        self.dataset = DisjointClassDataset
         self.root = os.path.join(self.datasetsroot, self.datasetdir)
 
         self.query = {}
@@ -35,14 +35,15 @@ class DisjointClassDataModule(LightningDataModule):
     def setup(self, stage: str):
         # if episodiceval: return self.setup_episodic_eval()
 
-        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=self.ntrainsamples, is_shot=False, nshot=0)
-        # self.add_label_noise(self.query['trn'].targets, ratio=0.4)
-        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
-        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
+        trn_split = DatasetSplitLoader(self.root, self.trnsplit, 'trn_label.json')
+        val_split = DatasetSplitLoader(self.root, self.valsplit, 'val_label.json')
+        tst_split = DatasetSplitLoader(self.root, self.tstsplit, 'tst_label.json')
 
+        self.query['trn'], _ = trn_split.split(nsamples=self.ntrainsamples, nshot=0)
         self.shot['trn'] = self.query['trn']
-        self.shot['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
-        self.shot['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=None, is_shot=True, nshot=self.nshot) # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
+        # self.add_label_noise(self.query['trn'].targets, ratio=0.4)
+        self.query['val'], self.shot['val'] = val_split.split(nsamples=self.nvalsamples, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
+        self.query['tst'], self.shot['tst'] = tst_split.split(nsamples=self.nvalsamples, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full)
 
         # self.query['trn'] = self.shot['tst']  # linear on test, RAC
         # self.query['val'] = self.query['tst']  # linear on test, RAC
@@ -56,12 +57,13 @@ class DisjointClassDataModule(LightningDataModule):
         # self.imgmem['val'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/val_label.json', split='train')
         # self.imgmem['tst'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/tst_label.json', split='train')
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=self.query['trn'].classids)
-        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=self.query['val'].classids)
-        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=self.query['tst'].classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
+        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=val_split.classids)
+        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=tst_split.classids)
 
-        assert len(set(self.query['val'].img_path).intersection(set(self.shot['val'].img_path))) == 0
-        assert len(set(self.query['tst'].img_path).intersection(set(self.shot['tst'].img_path))) == 0
+        if self.nshot > 0:
+            assert len(set(self.query['val'].data).intersection(set(self.shot['val'].data))) == 0
+            assert len(set(self.query['tst'].data).intersection(set(self.shot['tst'].data))) == 0
 
     def train_dataloader(self):
         return DataLoader(self.query['trn'], batch_size=self.batchsize, num_workers=self.nworkers, shuffle=True)
@@ -86,7 +88,7 @@ class DisjointClassDataModule(LightningDataModule):
         root = os.path.join(self.datasetsroot, self.datasetdir)
 
         if not hasattr(self, 'dataset_test_all'):
-            self.dataset_test_all = self.dataset(root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=None, is_shot=True, nshot=None)
+            self.dataset_test_all = self.dataset(root, splitdir=self.tstsplit, label_file='tst_label.json', nsamples=None, is_shot=True, nshot=None)
             imgmemroot = os.path.join(self.datasetsroot, 'webvisionv1')
             self.dataset_test_memory_all = WebvisionMemoryDataset(root=imgmemroot, label_file=os.path.join(root, 'tst_label.json'))
 
@@ -146,7 +148,9 @@ class DisjointClassDataModule(LightningDataModule):
 
 class ImageNet1KDataModule(DisjointClassDataModule):
     def setup(self, stage: str):
-        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='standard_label.json', nsamples=None, is_shot=False, nshot=0)
+        # self.query['trn'] = self.dataset(self.root, splitdir=self.trnsplit, label_file='standard_label.json', nsamples=None, is_shot=False, nshot=0)
+        trn_split = DatasetSplitLoader(self.root, self.trnsplit, 'standard_label.json')
+        self.query['trn'], _ = trn_split.split(nsamples=self.ntrainsamples, nshot=0)
         self.query['val'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/standard_label.json', split='val')
         self.query['tst'] = self.query['val']
 
@@ -160,7 +164,7 @@ class ImageNet1KDataModule(DisjointClassDataModule):
         self.imgmem['val'] = self.imgmem['trn']
         self.imgmem['tst'] = self.imgmem['trn']
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=self.query['trn'].classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
         self.txtmem['val'] = self.txtmem['trn']
         self.txtmem['tst'] = self.txtmem['trn']
 
@@ -168,27 +172,27 @@ class ImageNet1KDataModule(DisjointClassDataModule):
 class SameClassFGDataModule(DisjointClassDataModule):
     def __init__(self, imgmemdataset, **kwargs):
         super().__init__(**kwargs)
+        self.root = os.path.join(self.datasetsroot, self.datasetdir)
         self.imgmemdataset = imgmemdataset
 
     def setup(self, stage: str):
-        root = os.path.join(self.datasetsroot, self.datasetdir)
+        trn_split = DatasetSplitLoader(self.root, self.trnsplit, 'standard_label.json')
+        val_split = DatasetSplitLoader(self.root, self.valsplit, 'standard_label.json')
 
-        # TODO: predefine datasets with different seeds.
-        # TODO: refactor after rebuttal as running it 3 times
-        # by now its nsamples=5 is fixed
-        self.query['trn'] = self.dataset(root, splitdir=self.trainsplit, label_file='standard_label.json', nsamples=5, is_shot=False, nshot=0)
-        self.query['val'] = self.dataset(root, splitdir=self.valsplit, label_file='standard_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=0)
+        self.query['trn'], _ = trn_split.split(nsamples=self.ntrainsamples, nshot=0)
+        # self.add_label_noise(self.query['trn'].targets, ratio=0.4)
+        self.query['val'], _ = val_split.split(nsamples=None, nshot=0)
         self.query['tst'] = self.query['val']
 
         self.shot['trn'] = self.query['trn']
         self.shot['val'] = self.shot['trn']
-        self.shot['tst'] = self.shot['trn']
+        self.shot['tst'] = self.shot['val']
 
-        self.imgmem['trn'] = self.imgmemdataset(root=root, memory_dir='memory', label_file='standard_label.json')
+        self.imgmem['trn'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='standard_label.json')
         self.imgmem['val'] = self.imgmem['trn']
         self.imgmem['tst'] = self.imgmem['trn']
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(root, classids=self.query['trn'].classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
         self.txtmem['val'] = self.txtmem['trn']
         self.txtmem['tst'] = self.txtmem['trn']
 
@@ -199,25 +203,25 @@ class DisjointClassFGDataModule(DisjointClassDataModule):
         self.imgmemdataset = imgmemdataset
 
     def setup(self, stage: str):
-        self.query['trn'] = self.dataset(self.root, splitdir=self.trainsplit, label_file='trn_label.json', nsamples=5, is_shot=False, nshot=0)
-        self.query['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
-        self.query['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=self.nvalsamples, is_shot=False, nshot=self.nshot)
+        trn_split = DatasetSplitLoader(self.root, self.trnsplit, 'trn_label.json')
+        val_split = DatasetSplitLoader(self.root, self.valsplit, 'val_label.json')
+        tst_split = DatasetSplitLoader(self.root, self.tstsplit, 'tst_label.json')
 
-        self.shot['trn'] = self.query['trn']
-        self.shot['val'] = self.dataset(self.root, splitdir=self.valsplit, label_file='val_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
-        self.shot['tst'] = self.dataset(self.root, splitdir=self.testsplit, label_file='tst_label.json', nsamples=None, is_shot=True, nshot=self.nshot)  # nsamples=self.nsamples, is_shot=True, nshot=self.nshot)  # full
+        self.query['trn'], _ = trn_split.split(nsamples=self.ntrainsamples, nshot=0)
+        self.query['val'], self.shot['val'] = val_split.split(nsamples=self.nvalsamples, nshot=self.nshot)
+        self.query['tst'], self.shot['tst'] = tst_split.split(nsamples=self.nvalsamples, nshot=self.nshot)
 
         self.imgmem['trn'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='trn_label.json')
         self.imgmem['val'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='val_label.json')
         self.imgmem['tst'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='tst_label.json')
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=self.query['trn'].classids)
-        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=self.query['val'].classids)
-        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=self.query['tst'].classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
+        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=val_split.classids)
+        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=tst_split.classids)
 
-        assert len(set(self.query['val'].img_path).intersection(set(self.shot['val'].img_path))) == 0
-        assert len(set(self.query['tst'].img_path).intersection(set(self.shot['tst'].img_path))) == 0
-
+        if self.nshot > 0:
+            assert len(set(self.query['val'].data).intersection(set(self.shot['val'].data))) == 0
+            assert len(set(self.query['tst'].data).intersection(set(self.shot['tst'].data))) == 0
 
 @dataclass
 class ImageNet1KMemDataModule(LightningDataModule):
@@ -244,24 +248,24 @@ class ImageNet1KMemDataModule(LightningDataModule):
 
 def return_datamodule(datapath, dataset, batchsize, ntrainsamples, shot):
     if 'imagenetunseen' in dataset:
-        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, nsamples=ntrainsamples, nshot=shot)
+        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, ntrainsamples=ntrainsamples, nshot=shot)
     elif 'imagenetseen' in dataset:
-        dm = ImageNet1KDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, nsamples=ntrainsamples, nshot=shot)
+        dm = ImageNet1KDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, ntrainsamples=ntrainsamples, nshot=shot)
     elif dataset == 'cub200':
-        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train_150', valsplit='Val_50', testsplit='Val_50', nsamples=ntrainsamples, nshot=shot)
+        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trnsplit='Train_150', valsplit='Val_50', tstsplit='Val_50', nsamples=ntrainsamples, nshot=shot)
     elif dataset in ['caltech-101', 'oxford_pets', 'oxford_flowers', 'dtd', 'fgvc_aircraft', 'eurosat', 'sun397', 'ucf101', 'stanford_cars', 'food-101']:
-        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir=dataset, imgmemdataset=CUBMemoryDataset, batchsize=batchsize, nsamples=ntrainsamples, nshot=shot)
+        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir=dataset, imgmemdataset=CUBMemoryDataset, batchsize=batchsize, ntrainsamples=ntrainsamples, nshot=shot)
     else:
         raise NotImplementedError
     '''
     elif 'imagenethalf' in dataset:
-        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='val', nshot=shot)
+        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trnsplit='train', valsplit='val', tstsplit='val', nshot=shot)
     elif 'miniimagenet' in datasetkey:
-        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trainsplit='train', valsplit='val', testsplit='val', nshot=shot, nsamples=595)
+        dm = DisjointClassDataModule(datasetsroot=datapath, datasetdir=dataset, batchsize=batchsize, trnsplit='train', valsplit='val', tstsplit='val', nshot=shot, nsamples=595)
     elif datasetkey == 'cub200seen':
-        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trainsplit='Train', valsplit='Val', testsplit='Val', nshot=shot)
+        dm = SameClassFGDataModule(datasetsroot=datapath, datasetdir='CUB_200_2011', imgmemdataset=CUBMemoryDataset, batchsize=batchsize, trnsplit='Train', valsplit='Val', tstsplit='Val', nshot=shot)
     elif datasetkey == 'food101':
-        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trainsplit='Train_class', valsplit='Val_class', testsplit='Val_class', nshot=shot)
+        dm = DisjointClassFGDataModule(datasetsroot=datapath, datasetdir='food-101', imgmemdataset=FoodMemoryDataset, batchsize=batchsize, trnsplit='Train_class', valsplit='Val_class', tstsplit='Val_class', nshot=shot)
     '''
 
     return dm
