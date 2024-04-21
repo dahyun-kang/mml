@@ -9,38 +9,14 @@ import torchvision
 from torch.utils.data import Dataset
 
 from text_data.preprocess import SentPreProcessor
-
-
-class Transforms:  # TODO: can we import it from clip?
-    @staticmethod
-    def clip_transform(n_px):
-        '''
-        https://github.com/openai/CLIP/blob/main/clip/clip.py
-        '''
-        try:
-            from torchvision.transforms import InterpolationMode
-            BICUBIC = InterpolationMode.BICUBIC
-        except ImportError:
-            from PIL import Image
-            BICUBIC = Image.BICUBIC
-
-        def _convert_image_to_rgb(image):
-            return image.convert("RGB")
-
-        return torchvision.transforms.Compose([
-            torchvision.transforms.Resize(n_px, interpolation=BICUBIC),
-            torchvision.transforms.CenterCrop(n_px),
-            _convert_image_to_rgb,
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
-        ])
+from clip.clip import _transform as clip_transform
 
 
 class SubsetDataset(Dataset):
     def __init__(self, data, targets, imgsize=224):
         self.data = data
         self.targets = targets
-        self.transform = Transforms.clip_transform(imgsize)
+        self.transform = clip_transform(imgsize)
 
     def __getitem__(self, index):
 
@@ -179,7 +155,7 @@ class DatasetSplitLoader:
 
 class FGMemoryDataset(Dataset):
     def __init__(self, root, memory_dir='memory', label_file='standard_label.json', imgsize=224):
-        self.transform = Transforms.clip_transform(imgsize)
+        self.transform = clip_transform(imgsize)
         self.label_file = label_file
 
         self.memory_dir = os.path.join(root, memory_dir)
@@ -234,7 +210,7 @@ class FGMemoryDataset(Dataset):
 
 class WebvisionMemoryDataset(Dataset):
     def __init__(self, imgmemroot, queryroot, label_file = '', len_memory=100, webvisionsource='google', imgsize=224):
-        self.transform = Transforms.clip_transform(imgsize)
+        self.transform = clip_transform(imgsize)
         self.queryroot = queryroot
 
         # n0xxxxxxx -> 'web' 0 ~ 999
@@ -315,7 +291,7 @@ class ImageNet1K(Dataset):
         self.datasetsroot = datasetsroot
         self.datasetroot = os.path.join(datasetsroot, 'ILSVRC/Data/CLS-LOC')
         self.imgclassesdir = os.path.join(self.datasetroot, split)
-        self.transform = Transforms.clip_transform(imgsize)
+        self.transform = clip_transform(imgsize)
         self.txtlabels = {}
         self.synset2txtlabel = self.imagenetsynset2txtlabel()
 
