@@ -66,7 +66,7 @@ if __name__ == '__main__':
         max_epochs=args.maxepochs,
         accelerator="auto",
         devices=1 if torch.cuda.is_available() else None,
-        logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'mml-{args.dataset}-{args.seed}-{args.backbone}', config=args),
+        logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'mml-{args.dataset}-{str(args.seed)}-{args.backbone}', config=args),
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
         num_sanity_val_steps=0,
         resume_from_checkpoint=checkpoint_callback.lastmodelpath,

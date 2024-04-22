@@ -7,7 +7,7 @@ class CustomCheckpoint(ModelCheckpoint):
     Checkpoint load & save
     """
     def __init__(self, args):
-        self.dirpath = os.path.join('logs', args.dataset, args.seed, args.backbone, args.logpath)
+        self.dirpath = os.path.join('logs', args.dataset, str(args.seed), args.backbone, args.logpath)
 
         # if not args.eval and not args.episodiceval and not args.resume:
         if not args.eval and not args.resume:
