@@ -33,8 +33,8 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-6, help='Learning rate')
     parser.add_argument('--wd', type=float, default=5e-4, help='Weight decay')
     parser.add_argument('--multemp', type=float, default=16., help='Multiplying temperature')
-    parser.add_argument('--ik', type=int, default=16, help='Image K KNN')
-    parser.add_argument('--tk', type=int, default=16, help='Text K KNN')
+    parser.add_argument('--ik', type=int, default=32, help='Image K KNN')
+    parser.add_argument('--tk', type=int, default=32, help='Text K KNN')
     parser.add_argument('--maxepochs', type=int, default=1000, help='Max iterations')
     parser.add_argument('--nowandb', action='store_true', help='Flag not to log at wandb')
     parser.add_argument('--usefewshot', action='store_true', help='use few-shot images')  # no needv, use shot=K instead--
@@ -66,7 +66,7 @@ if __name__ == '__main__':
         max_epochs=args.maxepochs,
         accelerator="auto",
         devices=1 if torch.cuda.is_available() else None,
-        logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'mml-{args.dataset}-{str(args.seed)}-{args.backbone}', config=args),
+        logger=CSVLogger(save_dir='logs') if args.nowandb else WandbLogger(name=args.logpath, save_dir='logs', project=f'mml-{args.dataset}-seed{str(args.seed)}-{args.backbone}', config=args),
         callbacks=[LearningRateMonitor(logging_interval="step"), TQDMProgressBar(refresh_rate=10), checkpoint_callback],
         num_sanity_val_steps=0,
         resume_from_checkpoint=checkpoint_callback.lastmodelpath,
