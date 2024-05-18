@@ -9,12 +9,9 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision
 
-from model.transformer import TransformerEncoderLayer, ResidualAttentionBlock
+from model.transformer import ResidualAttentionBlock
 from text_data.prompt_template import prompt_templates
-
-import pdb
 
 
 class MemoryModularLearner(nn.Module):
@@ -150,10 +147,9 @@ class MemoryModularLearner(nn.Module):
 
         for split in splits:
             txtlabels = []
-            for target in range(len(self.img_label[split].unique())):
-                img_loader = self.dm.imgmem_dataloader(split)
-                txtlabel = img_loader.dataset.txtlabels[target][1]
-                # txtlabel = self.dm.txtlabels[target]
+            target2txtlabel = self.dm.target2txtlabel(split)
+            for key in target2txtlabel:
+                txtlabel = target2txtlabel[key]
                 txtlabels.append(txtlabel)
             self.cls_label[split] = np.array(txtlabels)
 

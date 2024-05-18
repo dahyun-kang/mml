@@ -36,13 +36,13 @@ class SubsetDataset(Dataset):
 
 
 class TextTokenMemoryDataset(Dataset):
-    def __init__(self, root, class2textlabel_file='labels.txt', wiki_dir='wiki', classids=[]):
+    def __init__(self, root, classid2target, wiki_dir='wiki'):
         '''
         * class2textlabel_file : "labels.txt" file. refer the link below
         https://github.com/ChangyaoTian/VL-LTR/releases/download/text-corpus/imagenet.zip
         '''
         # sentence token generator
-        preprocessor = SentPreProcessor(root, classids, class2textlabel_file, wiki_dir, context_length=75)
+        preprocessor = SentPreProcessor(root, classid2target, wiki_dir)
         text_tokens = preprocessor.make_sentence_tokens()
         num_sents = [token.shape[0] for token in text_tokens]
 
@@ -50,6 +50,8 @@ class TextTokenMemoryDataset(Dataset):
         self.targets = []
         for idx, nsents in enumerate(num_sents):
             self.targets += [idx] * nsents
+
+        self.target2txtlabel = preprocessor.get_txtlabel()
 
     def __len__(self):
         return len(self.targets)
@@ -62,11 +64,11 @@ class TextTokenMemoryDataset(Dataset):
 
 
 class DatasetSplitLoader:
-    def __init__(self, root, splitdir='train', label_file='trn_label.json'):
-        # label_file : class split identifier file. if empty, make a new one
+    def __init__(self, root, splitdir='train', classsplit_file='trn_label.json'):
+        # classsplit_file : class split identifier file. if empty, make a new one
         # directory-identified classes
         classdirnames = sorted(os.listdir(os.path.join(root, splitdir)))
-        self.classid2target = self._label_generator(root, label_file, classdirnames)
+        self.classid2target = self._label_generator(root, classsplit_file, classdirnames)
         self.classids = sorted(classdirnames, key = lambda item: self.classid2target[item])  # sort idxs with 0 ~ (# of classes - 1) order
 
         self.img_path = {}
@@ -83,7 +85,7 @@ class DatasetSplitLoader:
             for imgpath in imgpaths_c:
                 imgabspath = os.path.join(root, splitdir, classid, imgpath)
                 self.img_path[classid].append(imgabspath)
-   
+
     def split(self, nsamples=None, nshot=16):
         query_img_path = []
         query_targets = []
@@ -133,54 +135,33 @@ class DatasetSplitLoader:
 
 
 class FGMemoryDataset(Dataset):
-    def __init__(self, root, memory_dir='memory', label_file='standard_label.json', imgsize=224):
+    def __init__(self, root, classid2target, memory_dir='memory', imgsize=224):
         self.transform = clip_transform(imgsize)
-        self.label_file = label_file
+        self.data = []
+        self.targets = []
 
-        self.memory_dir = os.path.join(root, memory_dir)
-        with open(os.path.join(root, label_file)) as f:
-            mapper = json.load(f)
-        self.dir2target, self.txtlabels = self.mapper_refiner(mapper)
+        memory_dir = os.path.join(root, memory_dir)
+        folder_dirs = os.listdir(memory_dir)
 
-        folder_dirs = os.listdir(self.memory_dir)
-        self.memory = self.get_all_files(folder_dirs)
-
-    def mapper_refiner(self, mapper):
-        txtlabels = []
-        new_mapper = copy.deepcopy(mapper)
-
-        for key1 in mapper.keys():
-            target = new_mapper[key1]
-            txtlabels.append([target, key1])
-        ordered_txtlabels = ['' for _ in range(len(txtlabels))]
-        for target, key in txtlabels:
-            ordered_txtlabels[target] = key
-
-        return new_mapper, txtlabels
-
-    def get_all_files(self, folder_dirs):
-        all_files = []
-
-        for folder in folder_dirs:
-            folder_key = folder  # '_'.join(folder.split())
-            if folder_key not in self.dir2target.keys():
+        for dirname in folder_dirs:
+            if dirname not in classid2target.keys():
                 continue
-            folder_dir = os.path.join(self.memory_dir, folder)
+            folder_dir = os.path.join(memory_dir, dirname)
             folder_files = os.listdir(folder_dir)
-            target = self.dir2target[folder_key]
+            target = classid2target[dirname]
 
             for file in folder_files:
                 if file.split('.')[-1] != 'jpg':
                     continue
-                all_files.append([os.path.join(folder_dir, file), target])
-
-        return all_files
+                self.data.append(os.path.join(folder_dir, file))
+                self.targets.append(target)
 
     def __len__(self):
-        return len(self.memory)
+        return len(self.targets)
 
     def __getitem__(self, index):
-        img_path, target = self.memory[index]
+        img_path = self.data[index]
+        target = self.targets[index]
         img = Image.open(img_path).convert('RGB')
         if not (self.transform == None):
             img = self.transform(img)
@@ -188,7 +169,7 @@ class FGMemoryDataset(Dataset):
 
 
 class WebvisionMemoryDataset(Dataset):
-    def __init__(self, imgmemroot, queryroot, label_file = '', len_memory=100, webvisionsource='google', imgsize=224):
+    def __init__(self, imgmemroot, queryroot, classid2target, len_memory=50, webvisionsource='google', imgsize=224):
         self.transform = clip_transform(imgsize)
         self.queryroot = queryroot
 
@@ -202,9 +183,7 @@ class WebvisionMemoryDataset(Dataset):
             synset2webtarget[nxxxxxxxx] = linenum
             webtarget2synset[linenum] = nxxxxxxxx
 
-        with open(os.path.join(queryroot, label_file)) as f:
-            idxs_cls = json.load(f)
-        synset_set = idxs_cls.keys()  # [nxxxxxxxx, ..., nxxxxxxxx]
+        synset_set = classid2target.keys()  # [nxxxxxxxx, ..., nxxxxxxxx]
         num_classes = len(synset_set)
 
         # webvisionsource = {'google'/ 'flickr'}
@@ -222,7 +201,7 @@ class WebvisionMemoryDataset(Dataset):
             if webtarget2synset[webtarget] in synset_set:
                 # webvision is always memory
                 synset = webtarget2synset[webtarget]
-                target = idxs_cls[synset]
+                target = classid2target[synset]
                 # if nsamples_count[target] == 0:
                 #     print(webtarget, '->', synset, '->', target)
                 if nsamples_count[target] >= len_memory: continue
@@ -230,16 +209,15 @@ class WebvisionMemoryDataset(Dataset):
                 self.targets.append(target)
                 nsamples_count[target] += 1
 
+        '''
         with open(os.path.join(imgmemroot, 'info/synsets.txt')) as f:
             lines = f.readlines()
-
-        self.txtlabels = {}
 
         synset2txtlabel = self.imagenetsynset2txtlabel()
         for linenum, line in enumerate(lines):
             nxxxxxxxx = line.split()[0]
             if nxxxxxxxx in synset_set:
-                target = idxs_cls[nxxxxxxxx]
+                target = classid2target[nxxxxxxxx]
                 clstxtlabel = synset2txtlabel[nxxxxxxxx]  # clipstyle txtlabel
                 self.txtlabels[target] = clstxtlabel
 
@@ -251,6 +229,7 @@ class WebvisionMemoryDataset(Dataset):
                 synset, target, txtlabel = line.split(',')
                 synset2txtlabel[synset] = txtlabel
         return synset2txtlabel
+        '''
 
     def __getitem__(self, index):
         img_path = self.img_path[index]
@@ -264,9 +243,9 @@ class WebvisionMemoryDataset(Dataset):
 
 
 class ImageNet1K(Dataset):
-    def __init__(self, datasetsroot, label_file, split='train', imgsize=224):
+    def __init__(self, datasetsroot, classsplit_file, split='train', imgsize=224):
         super().__init__()
-        self.label_file = label_file
+        self.classsplit_file = classsplit_file
         self.datasetsroot = datasetsroot
         self.datasetroot = os.path.join(datasetsroot, 'ILSVRC/Data/CLS-LOC')
         self.imgclassesdir = os.path.join(self.datasetroot, split)
@@ -274,7 +253,7 @@ class ImageNet1K(Dataset):
         self.txtlabels = {}
         self.synset2txtlabel = self.imagenetsynset2txtlabel()
 
-        with open(os.path.join(self.datasetsroot, self.label_file), 'r') as f:
+        with open(os.path.join(self.datasetsroot, self.classsplit_file), 'r') as f:
             self.synset2target = json.load(f)
 
         if split == 'train':

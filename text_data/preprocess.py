@@ -6,10 +6,10 @@ from clip.simple_tokenizer import SimpleTokenizer
 from .prompt_template import prompt_templates
 
 class SentPreProcessor(object):
-    def __init__(self, root, loaded_idxs, label_mapping_file, wiki_dir, context_length=75):
+    def __init__(self, root, classid2target, wiki_dir, dir2target2txtfile='labels.txt', context_length=75):
         self.root = root
-        self.loaded_idxs = loaded_idxs
-        self.label_mapping_file = label_mapping_file
+        self.loaded_idxs = classid2target.keys()
+        self.classid2target = classid2target
         self.wiki_dir = wiki_dir
 
         self.drop_keys = ['External links', 'References', 'Further reading', 'Bibliography']
@@ -17,8 +17,20 @@ class SentPreProcessor(object):
         self.SEP_TOKENS = [267, 269] # [',', '.']
         self.context_length = context_length
 
-    def _get_wiki_hash(self):
-        with open(os.path.join(self.root, self.label_mapping_file), "r") as rf:
+        # class_metadata: a dict of windsor_chair': ['97', 'windsor chair']
+        self.class_metadata = self._load_class_metadata(dir2target2txtfile)
+    
+    def get_txtlabel(self):
+        target2txtlabel = dict()
+        for classid in self.classid2target:
+            _, txtlabel = self.class_metadata[classid]
+            target = self.classid2target[classid]
+            target2txtlabel[target] = txtlabel
+            
+        return target2txtlabel
+
+    def _load_class_metadata(self, fname):
+        with open(os.path.join(self.root, fname), "r") as rf:
             data = rf.readlines()
         hash_table = {}
         # _lines = [l.split() for l in data]
@@ -81,15 +93,13 @@ class SentPreProcessor(object):
         return result
 
     def make_sentence_tokens(self):
-        hash_table = self._get_wiki_hash()
-
         sentence_tokens = []
         wiki_dir = os.path.join(self.root, self.wiki_dir)
         for idxs in self.loaded_idxs:
-            now_wiki_desc = os.path.join(wiki_dir, f"desc_{hash_table[idxs][0]}.txt")
+            now_wiki_desc = os.path.join(wiki_dir, f"desc_{self.class_metadata[idxs][0]}.txt")
             wiki_desc = self._parse_desc(now_wiki_desc)
             wiki_text = self._get_text(wiki_desc)
-            naive_text = self._gen_naive_desc(hash_table[idxs][1])
+            naive_text = self._gen_naive_desc(self.class_metadata[idxs][1])
             text = naive_text + wiki_text
 
             splited_texts = self._split_sent(text)

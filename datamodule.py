@@ -49,17 +49,17 @@ class DisjointClassDataModule(LightningDataModule):
         # self.query['val'] = self.query['tst']  # linear on test, RAC
 
         imgmemroot = os.path.join(self.datasetsroot, 'webvisionv1')
-        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='trn_label.json')
-        self.imgmem['val'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='val_label.json')
-        self.imgmem['tst'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='tst_label.json')
+        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, classid2target=trn_split.classid2target)
+        self.imgmem['val'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, classid2target=val_split.classid2target)
+        self.imgmem['tst'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, classid2target=tst_split.classid2target)
 
         # self.imgmem['trn'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/trn_label.json', split='train')
         # self.imgmem['val'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/val_label.json', split='train')
         # self.imgmem['tst'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/tst_label.json', split='train')
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
-        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=val_split.classids)
-        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=tst_split.classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classid2target=trn_split.classid2target)
+        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classid2target=val_split.classid2target)
+        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classid2target=tst_split.classid2target)
 
         if self.nshot > 0:
             assert len(set(self.query['val'].data).intersection(set(self.shot['val'].data))) == 0
@@ -82,6 +82,9 @@ class DisjointClassDataModule(LightningDataModule):
 
     def imgmem_dataloader(self, split):
         return DataLoader(self.imgmem[split], batch_size=self.batchsize, num_workers=self.nworkers)
+    
+    def target2txtlabel(self, split):
+        return self.txtmem[split].target2txtlabel
 
     '''
     def setup_episodic_eval(self, nclass=5, nshot=5, nquery=15):
@@ -151,7 +154,7 @@ class ImageNet1KDataModule(DisjointClassDataModule):
         # self.query['trn'] = self.dataset(self.root, splitdir=self.trnsplit, label_file='standard_label.json', nsamples=None, is_shot=False, nshot=0)
         trn_split = DatasetSplitLoader(self.root, self.trnsplit, 'standard_label.json')
         self.query['trn'], _ = trn_split.split(nsamples=self.ntrainsamples, nshot=0)
-        self.query['val'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/standard_label.json', split='val')
+        self.query['val'] = ImageNet1K(datasetsroot=self.datasetsroot, classsplit_file=f'{self.datasetdir}/standard_label.json', split='val')
         self.query['tst'] = self.query['val']
 
         self.shot['trn'] = self.query['trn']  # equivalent to dataset_train and shared with all splits
@@ -160,11 +163,11 @@ class ImageNet1KDataModule(DisjointClassDataModule):
 
         # self.imgmem['trn'] = ImageNet1K(datasetsroot=self.datasetsroot, label_file=f'{self.datasetdir}/standard_label.json', split='train')
         imgmemroot = os.path.join(self.datasetsroot, 'webvisionv1')
-        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, label_file='standard_label.json')
+        self.imgmem['trn'] = WebvisionMemoryDataset(imgmemroot=imgmemroot, queryroot=self.root, classid2target=trn_split.classid2target)
         self.imgmem['val'] = self.imgmem['trn']
         self.imgmem['tst'] = self.imgmem['trn']
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classid2target=trn_split.classid2target)
         self.txtmem['val'] = self.txtmem['trn']
         self.txtmem['tst'] = self.txtmem['trn']
 
@@ -188,11 +191,11 @@ class SameClassFGDataModule(DisjointClassDataModule):
         self.shot['val'] = self.shot['trn']
         self.shot['tst'] = self.shot['val']
 
-        self.imgmem['trn'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='standard_label.json')
+        self.imgmem['trn'] = self.imgmemdataset(root=self.root, memory_dir='memory', classid2target=trn_split.classid2target)
         self.imgmem['val'] = self.imgmem['trn']
         self.imgmem['tst'] = self.imgmem['trn']
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classid2target=trn_split.classid2target)
         self.txtmem['val'] = self.txtmem['trn']
         self.txtmem['tst'] = self.txtmem['trn']
 
@@ -211,13 +214,13 @@ class DisjointClassFGDataModule(DisjointClassDataModule):
         self.query['val'], self.shot['val'] = val_split.split(nsamples=self.nvalsamples, nshot=self.nshot)
         self.query['tst'], self.shot['tst'] = tst_split.split(nsamples=self.nvalsamples, nshot=self.nshot)
 
-        self.imgmem['trn'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='trn_label.json')
-        self.imgmem['val'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='val_label.json')
-        self.imgmem['tst'] = self.imgmemdataset(root=self.root, memory_dir='memory', label_file='tst_label.json')
+        self.imgmem['trn'] = self.imgmemdataset(root=self.root, memory_dir='memory', classid2target=trn_split.classid2target)
+        self.imgmem['val'] = self.imgmemdataset(root=self.root, memory_dir='memory', classid2target=val_split.classid2target)
+        self.imgmem['tst'] = self.imgmemdataset(root=self.root, memory_dir='memory', classid2target=tst_split.classid2target)
 
-        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classids=trn_split.classids)
-        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classids=val_split.classids)
-        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classids=tst_split.classids)
+        self.txtmem['trn'] = TextTokenMemoryDataset(self.root, classid2target=trn_split.classid2target)
+        self.txtmem['val'] = TextTokenMemoryDataset(self.root, classid2target=val_split.classid2target)
+        self.txtmem['tst'] = TextTokenMemoryDataset(self.root, classid2target=tst_split.classid2target)
 
         if self.nshot > 0:
             assert len(set(self.query['val'].data).intersection(set(self.shot['val'].data))) == 0
