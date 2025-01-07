@@ -169,7 +169,7 @@ class FGMemoryDataset(Dataset):
 
 
 class WebvisionMemoryDataset(Dataset):
-    def __init__(self, imgmemroot, queryroot, classid2target, len_memory=50, webvisionsource='google', imgsize=224):
+    def __init__(self, imgmemroot, queryroot, classid2target, len_memory=100, webvisionsource='google', imgsize=224):
         self.transform = clip_transform(imgsize)
         self.queryroot = queryroot
 
