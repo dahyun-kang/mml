@@ -1,4 +1,18 @@
-# Memory classification
+<div align="center">
+  <h1> Memory-Modular Classification: Learning to Generalize with Memory Replacement </h1>
+</div>
+
+
+<div align="center">
+  <h3><a href=http://dahyun-kang.github.io>Dahyun Kang</a> &nbsp;&nbsp;&nbsp;&nbsp; <a href=https://scholar.google.com/citations?user=wIjyqzAAAAAJ&hl=en&oi=ao>Ahmet Iscen</a> &nbsp;&nbsp;&nbsp;&nbsp;  Eunchan Jo &nbsp;&nbsp;&nbsp;&nbsp;  <a href=https://sua-choi.github.io/>Sua Choi</a>  &nbsp;&nbsp;&nbsp;&nbsp; <a href=http://cvlab.postech.ac.kr/~mcho/>Minsu Cho</a> &nbsp;&nbsp;&nbsp;&nbsp;   <a href=https://scholar.google.com/citations?user=IvqCXP4AAAAJ&hl=en>Cordelia Schmid</a></h3>
+</div>
+<br />
+
+
+
+This repo is the official implementation of the TMLR 2025 paper [Memory-Modular Classification: Learning to Generalize with Memory Replacement](https://openreview.net/forum?id=DcIW0idrg8&)
+
+
 
 ## Conda installation command
 ```bash
@@ -6,25 +20,23 @@ conda env create -f environment.yml --prefix $YOURPREFIX
 ```
 `$YOUPREFIX` is typically `/home/anaconda3`
 
-## Training command for cifar10/cifar100/food101/places365/fgvcaircraft/stl10
+## Training command
 ```python
 python main.py \
     --datapath $YOURDATASETPATH \
-    --backbone {resnet18/resnet50/clipRN50/clipvitb} \
-    --dataset {cifar10/cifar100/food101/places365/fgvcaircraft/stl10} \
+    --dataset {imagenetunseen/cub200} \
     --logpath $YOURLOGPATH
 ```
 
-## Training command for imagenetLT/placesLT
+## Eval command
 ```python
 python main.py \
     --datapath $YOURDATASETPATH \
-    --backbone {resnet18/resnet50/clipRN50/clipvitb} \
-    --dataset {imagenetLT/placesLT} \
-    --LT \
-    --sampler {Classaware/SquareRoot} \
+    --dataset {imagenetunseen/cub200} \
     --logpath $YOURLOGPATH
+    --eval
 ```
+
 
 ### ImageNet100 data preparation
 
@@ -42,31 +54,7 @@ Then download and extract the [wiki text](https://github.com/ChangyaoTian/VL-LTR
   	desc_1.txt
   labels.txt
 
-  # not in use
-  ImageNet_LT_test.txt
-  ImageNet_LT_train.txt
-  ImageNet_LT_val.txt
-  Labels.json 
 ```
-
-## Reproduce Experiments
-### Joint learning
-```python
-python main.py --datapath data --dataset imagenetLT --backbone resnext50 --lr 0.025 --maxepochs 90 --Decoupled joint --batchsize 64
-```
-### cRT learning
-```python
-python main.py --datapath data --dataset imagenetLT --backbone resnext50 --lr 0.025 --maxepochs 100 --Decoupled cRT --batchsize 64 --sampler ClassAware
-```
-### feat_extract (Do before tau-normalize)
-```python
-python main.py --datapath data --dataset imagenetLT --backbone resnext50 --Decoupled feat_extract --nowandb --batchsize 64
-```
-### tau-normalize
-```python
-python main.py --datapath data --dataset imagenetLT --backbone resnext50 --Decoupled tau --nowandb
-```
-
 
 ## Flags
 - Raise `--nowandb` for no wandb logging
