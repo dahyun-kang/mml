@@ -16,7 +16,7 @@
 <br />
 
 <div align="center">
-  <img src="data/mml_teaser.png" alt="teaser"/>
+  <img src="data/mml_teaser.png" alt="teaser" width="500"/>
 </div>
 
 This repo is the official implementation of the TMLR 2025 paper [Memory-Modular Classification: Learning to Generalize with Memory Replacement](https://openreview.net/forum?id=DcIW0idrg8&)
