@@ -4,7 +4,7 @@
 
 
 <div align="center">
-  <h3><a href=http://dahyun-kang.github.io>Dahyun Kang</a> &nbsp;&nbsp;&nbsp;&nbsp; <a href=https://scholar.google.com/citations?user=wIjyqzAAAAAJ&hl=en&oi=ao>Ahmet Iscen</a> &nbsp;&nbsp;&nbsp;&nbsp;  Eunchan Jo &nbsp;&nbsp;&nbsp;&nbsp;  <a href=https://sua-choi.github.io/>Sua Choi</a>  &nbsp;&nbsp;&nbsp;&nbsp; <a href=http://cvlab.postech.ac.kr/~mcho/>Minsu Cho</a> &nbsp;&nbsp;&nbsp;&nbsp;   <a href=https://scholar.google.com/citations?user=IvqCXP4AAAAJ&hl=en>Cordelia Schmid</a></h3>
+  <h3><a href=http://dahyun-kang.github.io>Dahyun Kang</a> &nbsp;&nbsp;&nbsp; <a href=https://scholar.google.com/citations?user=wIjyqzAAAAAJ&hl=en&oi=ao>Ahmet Iscen</a> &nbsp;&nbsp;&nbsp; Eunchan Jo &nbsp;&nbsp;&nbsp; <a href=https://sua-choi.github.io/>Sua Choi</a> &nbsp;&nbsp;&nbsp; <a href=http://cvlab.postech.ac.kr/~mcho/>Minsu Cho</a> &nbsp;&nbsp;&nbsp; <a href=https://scholar.google.com/citations?user=IvqCXP4AAAAJ&hl=en>Cordelia Schmid</a></h3>
 </div>
 <br />
 
